@@ -13,23 +13,33 @@ Everything runs locally on your Mac. An optional LLM pass fixes the words lip re
                      live preview: greedy CTC every 0.45 s while you talk
 ```
 
-## Setup
+## Setup (for you and your coworkers)
+
+Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
 
 ```sh
-./setup.sh            # uv sync + ~1.2 GB of models
-uv run lipflow        # starts the menu-bar app (a mouth icon in the menu bar)
+git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
+cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds ~/Applications/Lipflow.app
+open ~/Applications/Lipflow.app
 ```
 
-The first time you use it, macOS asks for three permissions for whichever app launched
-Lipflow (your terminal):
+The first launch opens setup, which takes about 8 minutes:
 
-| Permission | Why |
-|---|---|
-| **Camera** | to see your mouth |
-| **Input Monitoring** | to notice the push-to-talk key anywhere |
-| **Accessibility** | to press ⌘V into the focused app |
+1. **Permissions:** Camera, Input Monitoring and Accessibility, each asked once for "Lipflow".
+2. **Your words:** if you use Wispr Flow, it imports your dictation history (read locally, never
+   uploaded) to learn your phrasing and the names you say.
+3. **Practice:** you silently mouth 24 sentences (taken from your own history when available).
+4. **Train:** it fine-tunes the language model on your phrasing and the lip reader on your face,
+   on this Mac's GPU. Six practice sentences are held out, and the face model is only kept if it
+   reads them better than the stock model. You see the before/after score.
 
-Run `uv run lipflow doctor` to check them all. After granting Input Monitoring, restart the terminal.
+Re-run it any time from the menu → *Set up / train on my face…*. More practice clips help more.
+Everything personal (clips, phrases, trained models) lives in
+`~/Library/Application Support/Lipflow/`. Delete that folder to start over.
+
+To start Lipflow at login: System Settings → General → Login Items → add Lipflow. Logs are in
+`~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
+macOS asks for permissions in the terminal's name.
 
 ### Better accuracy: turn on LLM cleanup
 

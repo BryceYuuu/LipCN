@@ -14,6 +14,7 @@ dependencies = [
     "pyobjc-framework-cocoa>=10.3",
     "pyobjc-framework-quartz>=10.3",
     "requests>=2.31",
+    "sentencepiece>=0.2.2",
     "torch>=2.4",
 ]
 

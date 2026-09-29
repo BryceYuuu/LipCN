@@ -35,11 +35,13 @@ def main(argv=None):
     f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic", "none"])
 
     sub.add_parser("doctor", help="check permissions, camera and model files")
+    sub.add_parser("onboard", help="open the setup window (permissions, Wispr import, train on your face)")
+    sub.add_parser("train-lm", help="fine-tune the language model on your imported phrases")
     w = sub.add_parser("import-wispr", help="learn your phrasing from your Wispr Flow history (stays local)")
     w.add_argument("--from-text", help="import a plain-text file of your writing instead (one phrase per line)")
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] not in {"run", "file", "doctor", "import-wispr", "-h", "--help"}:
+    if not argv or argv[0] not in {"run", "file", "doctor", "import-wispr", "onboard", "train-lm", "-h", "--help"}:
         argv.insert(0, "run")
     args = p.parse_args(argv)
     cmd = args.cmd
@@ -66,6 +68,15 @@ def main(argv=None):
             print(f"  added {len(stats['new_names'])} names/terms to {WORDS}. Review them: "
                   "Lipflow menu → Edit custom words")
         print("Restart Lipflow to use them.")
+    elif cmd == "train-lm":
+        from .train_lm import train
+        r = train()
+        print(f"Your held-out phrases: perplexity {r['before']['yours']:.1f} → {r['after']['yours']:.1f}; "
+              f"general text {r['before']['general']:.1f} → {r['after']['general'] or r['before']['general']:.1f}"
+              f" ({'saved' if r['saved'] else 'not better, not saved'})")
+    elif cmd == "onboard":
+        from .app import Options, run
+        run(Options(onboard=True))
     elif cmd == "doctor":
         from .doctor import doctor
         sys.exit(doctor())

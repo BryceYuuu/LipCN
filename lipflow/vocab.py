@@ -8,7 +8,9 @@ from __future__ import annotations
 import os
 import re
 
-PATH = os.path.expanduser("~/Library/Application Support/Lipflow/words.txt")
+from .paths import HOME
+
+PATH = os.path.join(HOME, "words.txt")
 _TEMPLATE = """# Lipflow custom words: one name or term per line, written how you want it typed.
 # When one of the model's top guesses contains a word from this list, that guess wins.
 Miguel

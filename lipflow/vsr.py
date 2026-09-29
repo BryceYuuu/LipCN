@@ -25,6 +25,7 @@ from espnet.nets.pytorch_backend.e2e_asr_transformer import E2E  # noqa: E402
 from espnet.nets.scorers.length_bonus import LengthBonus  # noqa: E402
 
 MODEL_FPS = 25
+PERSONAL_LM_WEIGHT = 0.2
 MODELS = os.path.join(ROOT, "models")
 _MEAN, _STD = 0.421, 0.165
 
@@ -41,7 +42,8 @@ def pick_encoder_device(pref: str = "auto") -> torch.device:
 
 class LipReader:
     def __init__(self, device: str = "auto", beam_size: int = 20, lm_weight: float = 0.3,
-                 ctc_weight: float = 0.1, use_lm: bool = True):
+                 ctc_weight: float = 0.1, use_lm: bool = True, personal_weight: "float | None" = None,
+                 personal: bool = True):
         # The 3D-conv + conformer encoder is 17x faster on the Apple GPU; beam search is
         # thousands of tiny ops and runs faster on CPU, so the two are split.
         self.enc_device = pick_encoder_device(device)
@@ -56,6 +58,13 @@ class LipReader:
         self.model = E2E(odim, args)
         state = torch.load(os.path.join(MODELS, "vsr", "model.pth"), map_location="cpu", weights_only=True)
         self.model.load_state_dict(state)
+        # Your face: a fine-tuned copy of the visual model from onboarding (only the changed tensors)
+        self.personal_vsr = False
+        from .paths import PERSONAL_LM, PERSONAL_VSR
+        pv = PERSONAL_VSR
+        if personal and os.path.exists(pv):
+            self.model.load_state_dict(torch.load(pv, map_location="cpu", weights_only=True), strict=False)
+            self.personal_vsr = True
         self.model.to(self.device).eval()
         self.model.encoder.to(self.enc_device)
 
@@ -69,11 +78,24 @@ class LipReader:
             torch_load(lm_path, lm)
             lm.eval()
         scorers["lm"] = lm
+        # How you talk: a copy of the LM fine-tuned on your phrases (lipflow train-lm), scored
+        # alongside the general one so the search still knows ordinary English.
+        plm = None
+        pl = PERSONAL_LM
+        if lm is not None and personal and os.path.exists(pl):
+            plm = lm_class(odim, lm_args)
+            plm.load_state_dict(torch.load(pl, map_location="cpu", weights_only=True))
+            plm.eval()
+        self.personal_lm = plm is not None
+        pw = PERSONAL_LM_WEIGHT if personal_weight is None else personal_weight
+        if plm is not None and pw > 0:
+            scorers["plm"] = plm
         scorers["length_bonus"] = LengthBonus(odim)
         self.beam = BatchBeamSearch(
             beam_size=beam_size,
             vocab_size=odim,
-            weights=dict(decoder=1.0 - ctc_weight, ctc=ctc_weight, lm=lm_weight if lm else 0.0, length_bonus=0.0),
+            weights=dict(decoder=1.0 - ctc_weight, ctc=ctc_weight, lm=lm_weight if lm else 0.0, length_bonus=0.0,
+                         **({"plm": pw} if "plm" in scorers else {})),
             scorers=scorers,
             sos=odim - 1,
             eos=odim - 1,

@@ -87,6 +87,7 @@ class Camera:
         self._tracker: FaceTracker | None = None
         self.error: str | None = None
         self.ready = threading.Event()
+        self.track_always = False  # onboarding shows the mouth preview even when not recording
 
     # -- lifecycle -----------------------------------------------------------------
     def ensure_open(self):
@@ -175,7 +176,7 @@ class Camera:
                     self.ready.set()
                 rec = self._rec
                 obs: FaceObs | None = None
-                if rec is not None:
+                if rec is not None or self.track_always:
                     obs = self._tracker.detect(frame, int((now - t0) * 1000))
                 if rec is not None and warm >= 3:
                     with self._lock:
@@ -189,7 +190,7 @@ class Camera:
                         self.on_frame(frame, obs, rec is not None)
                     except Exception as e:  # UI errors must not kill capture
                         print(f"[camera] on_frame: {e}")
-                if rec is None and now - self._last_used > self.idle_close:
+                if rec is None and not self.track_always and now - self._last_used > self.idle_close:
                     break
         finally:
             self._cap.release()

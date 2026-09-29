@@ -664,6 +664,7 @@ dependencies = [
     { name = "pyobjc-framework-cocoa" },
     { name = "pyobjc-framework-quartz" },
     { name = "requests" },
+    { name = "sentencepiece" },
     { name = "torch" },
 ]
 
@@ -684,6 +685,7 @@ requires-dist = [
     { name = "pyobjc-framework-cocoa", specifier = ">=10.3" },
     { name = "pyobjc-framework-quartz", specifier = ">=10.3" },
     { name = "requests", specifier = ">=2.31" },
+    { name = "sentencepiece", specifier = ">=0.2.2" },
     { name = "torch", specifier = ">=2.4" },
 ]
 

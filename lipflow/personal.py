@@ -19,7 +19,7 @@ from collections import Counter
 
 from . import vocab
 
-DIR = os.path.expanduser("~/Library/Application Support/Lipflow")
+from .paths import HOME as DIR
 PHRASES = os.path.join(DIR, "phrases.txt")
 WISPR_DIR = os.path.expanduser("~/Library/Application Support/Wispr Flow")
 _WORD = re.compile(r"[a-z0-9']+")

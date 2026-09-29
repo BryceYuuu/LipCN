@@ -27,8 +27,10 @@ from AppKit import NSFontWeightRegular
 from .paste import copy_text, paste_text
 from .vsr import LipReader
 
-HISTORY = os.path.expanduser("~/Library/Application Support/Lipflow/history.jsonl")
-SETTINGS = os.path.expanduser("~/Library/Application Support/Lipflow/settings.json")
+from .paths import HOME
+
+HISTORY = os.path.join(HOME, "history.jsonl")
+SETTINGS = os.path.join(HOME, "settings.json")
 
 
 def load_settings() -> dict:
@@ -56,6 +58,7 @@ class Options:
     camera: "int | str" = "auto"  # 'auto' = the Mac's built-in camera
     paste: bool = True
     live_preview: bool = True
+    onboard: bool = False
 
 
 def ui(fn, *args, **kw):
@@ -78,6 +81,10 @@ class Lipflow(NSObject):
         self.context: list[str] = []
         self.hands_free = False
         self.pending_stop = None
+        self._ui_busy = False        # a video frame is waiting to be drawn on the main thread
+        self.onboarding = None       # the setup window while it's collecting practice clips
+        self.onboarding_text = ""
+        self.setup = None
         self.loading = True
         self.settings = load_settings()
         cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
@@ -132,6 +139,7 @@ class Lipflow(NSObject):
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
         self._item(menu, "Open history", "openHistory:", icon="clock.arrow.circlepath")
         self._item(menu, "Edit custom words…", "openWords:", icon="character.book.closed")
+        self._item(menu, "Set up / train on my face…", "openSetup:", icon="person.crop.square")
         menu.addItem_(NSMenuItem.separatorItem())
         self._item(menu, "Quit Lipflow", "quit:", "q", icon="power")
         self.status.setMenu_(menu)
@@ -194,6 +202,17 @@ class Lipflow(NSObject):
         os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
         open(HISTORY, "a").close()
         os.system(f'open -t "{HISTORY}"')
+
+    def openSetup_(self, sender):
+        self.show_setup()
+
+    @objc.python_method
+    def show_setup(self):
+        from .onboarding import Onboarding
+        if self.setup is None:
+            self.setup = Onboarding.alloc().initWithApp_(self)
+        self.camera.track_always = True
+        self.setup.show()
 
     def openWords_(self, sender):
         from . import vocab
@@ -259,15 +278,30 @@ class Lipflow(NSObject):
     # -- camera thread -------------------------------------------------------------
     @objc.python_method
     def onFrame(self, frame, obs, recording):
-        if not recording:
-            return
+        """Camera thread. Video previews are *coalesced*: at most one frame update waits on the main
+        thread at a time. Queuing every frame let the backlog delay the push-to-talk key handling
+        (measured: 8 s practice clips came out 0.5 s long)."""
         rec = self.camera.recording
-        if rec is not None and rec.duration > MAX_SECONDS:
+        if recording and rec is not None and rec.duration > MAX_SECONDS:
             ui(self.on_stop)
             return
-        thumb = mouth_view(frame, obs)
+        if self._ui_busy or (not recording and self.onboarding is None):
+            return
+        setup = mouth_view(frame, obs, 208, 130) if self.onboarding is not None else None
+        pill = mouth_view(frame, obs) if recording else None
         level = obs.mouth_open * 2.6 if obs else 0.0
-        ui(self.hud.set_frame, thumb, level)
+        self._ui_busy = True
+        ui(self._show_frame, setup, pill, level)
+
+    @objc.python_method
+    def _show_frame(self, setup, pill, level):
+        try:
+            if setup is not None and self.onboarding is not None:
+                self.onboarding.set_frame(setup)
+            if pill is not None:
+                self.hud.set_frame(pill, level)
+        finally:
+            self._ui_busy = False
 
     # -- model thread --------------------------------------------------------------
     @objc.python_method
@@ -299,6 +333,8 @@ class Lipflow(NSObject):
                     self._preview(*job[1:])
                 elif job[0] == "final":
                     self._final(job[1])
+                elif job[0] == "train":
+                    self._train(job[1])
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -325,7 +361,10 @@ class Lipflow(NSObject):
         name = self.opts.key.replace("_", " ").title()
         ui(self.state_item.setTitle_, "Ready")
         ui(self.state_item.setImage_, symbol("checkmark.circle", 13, NSFontWeightRegular))
-        ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
+        if self.opts.onboard or not self.settings.get("onboarded"):
+            ui(self.show_setup)
+        else:
+            ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
 
     @objc.python_method
     def _rois(self, rec: Recording):
@@ -354,6 +393,12 @@ class Lipflow(NSObject):
             problem = ("Can't see your face", "Face the camera with your mouth in view")
         elif np.std([m for m in rec.mouth_open if m > 0] or [0]) < 0.012:
             problem = ("No lip movement", "Mouth the words clearly — no sound needed")
+        if problem and self.onboarding is not None:
+            print(f"[lipflow] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
+                  f"{rec.face_ratio:.0%}): {problem[0]}")
+            ui(self.onboarding.clip_done, False, f"{problem[0]}. {problem[1]}.")
+            ui(self.hud.hide)
+            return
         if problem:
             print(f"[lipflow] skipped {rec.duration:.1f}s clip ({len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
@@ -362,6 +407,12 @@ class Lipflow(NSObject):
         rois = self._rois(rec)
         enc = self.reader.encode(rois)
         t_enc = time.time() - t0
+        if self.onboarding is not None:  # practice clip: keep it with its known text, don't paste
+            raw = self.reader.greedy(enc)
+            print(f"[lipflow] practice clip saved ({rec.duration:.1f}s): {raw!r}")
+            ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
+            ui(self.hud.hide)
+            return
         candidates = self.reader.beam_search(enc, nbest=5)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
@@ -382,11 +433,75 @@ class Lipflow(NSObject):
         self.last_paste_at = time.time()
         self.context.append(text)
         self._log(rec, candidates, text, t_all)
+        self._save_clip(rois, candidates, text)
         if self.opts.paste:
             ui(paste_text, out)
         else:
             ui(copy_text, text)
         ui(self.hud.show, "done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
+
+    @objc.python_method
+    def _save_clip(self, rois, candidates, text):
+        """Keep the mouth crops of each dictation (local only) so accuracy changes can be measured on
+        your real clips. Turn off with "save_clips": false in settings.json."""
+        if not self.settings.get("save_clips", True):
+            return
+        d = os.path.join(os.path.dirname(HISTORY), "clips", "dictations")
+        os.makedirs(d, exist_ok=True)
+        np.savez_compressed(os.path.join(d, f"{int(time.time() * 1000)}.npz"), rois=rois,
+                            raw=np.array(candidates), text=text)
+
+    @objc.python_method
+    def _train(self, ob):
+        """Onboarding: personal LM (if phrases) then face adaptation with a held-out check."""
+        import random as _r
+        from .bench import wer
+        from .onboarding import N_HELD_OUT, saved_clips
+        from .personal import PHRASES
+        from .train_vsr import finetune, save
+        self.loading = True
+        note = ""
+        if os.path.exists(PHRASES):
+            ob.report(3, "Learning how you talk from your phrases…")
+            from .train_lm import train as train_lm
+            try:
+                r = train_lm(epochs=3)
+                note = (f"Your phrasing: {r['before']['yours']:.0f} → {r['after']['yours']:.0f} perplexity. "
+                        if r["saved"] else "")
+            except Exception as e:
+                print(f"[lipflow] train-lm failed: {e}")
+        clips = saved_clips()
+        if len(clips) < N_HELD_OUT + 6:
+            ob.finished(0, None, False, "Not enough practice clips to train on. Run setup again from the menu.")
+            self.loading = False
+            return
+        _r.Random(1).shuffle(clips)
+        test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:]
+        ob.report(15, f"Measuring the standard model on {len(test)} of your sentences…")
+        base = LipReader(beam_size=self.opts.beam, personal=False)
+
+        def score(reader):
+            e = n = 0
+            for c in test:
+                a, b = wer(reader.beam_search(reader.encode(c["rois"])), c["text"])
+                e, n = e + a, n + b
+            return e / max(n, 1)
+
+        before = score(base)
+        ob.report(25, f"Training on {len(train)} of your clips…")
+        finetune(train, reader=base, log=lambda *a: None,
+                 on_epoch=lambda k, n: ob.report(25 + 65 * k / n, f"Training on your face: pass {k} of {n}"))
+        ob.report(92, "Checking it on the sentences it didn't see…")
+        after = score(base)
+        kept = after < before
+        if kept:
+            save(base)
+        del base
+        self.reader = LipReader(beam_size=self.opts.beam)
+        self.reader.warmup()
+        self.loading = False
+        print(f"[lipflow] onboarding: held-out WER {before:.1%} → {after:.1%} ({'kept' if kept else 'discarded'})")
+        ob.finished(before, after, kept, note)
 
     @objc.python_method
     def _log(self, rec, candidates, text, secs):

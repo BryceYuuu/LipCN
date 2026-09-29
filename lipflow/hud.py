@@ -77,11 +77,18 @@ def _panel(frame) -> NSPanel:
     return p
 
 
-def _glass(frame, radius: float, tint: float = 0.22):
+def _glass(frame, radius: float, scrim: float = 0.8):
     """(outer view, content view). Liquid Glass (NSGlassEffectView, macOS 26+) when available,
-    otherwise the older frosted HUD material. `tint` darkens the glass a touch so white text stays
-    legible over bright windows without losing the refraction."""
+    otherwise the frosted HUD material.
+
+    Liquid Glass adapts to what's behind it and turns light over a white page, so a tint alone
+    can't keep white text readable. The content view carries its own dark scrim: the glass still
+    refracts at the edges, but text always sits on a dark surface, on any background."""
     content = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, frame.size.width, frame.size.height))
+    content.setWantsLayer_(True)
+    content.layer().setCornerRadius_(radius)
+    content.layer().setMasksToBounds_(True)
+    content.layer().setBackgroundColor_(_cg((0.06, 0.06, 0.09), scrim))
     try:
         Glass = objc.lookUpClass("NSGlassEffectView")
     except objc.nosuchclass_error:
@@ -90,7 +97,7 @@ def _glass(frame, radius: float, tint: float = 0.22):
         g = Glass.alloc().initWithFrame_(frame)
         g.setStyle_(0)  # NSGlassEffectViewStyleRegular
         g.setCornerRadius_(radius)
-        g.setTintColor_(_rgb((0.05, 0.05, 0.08), tint))
+        g.setTintColor_(_rgb((0.05, 0.05, 0.08), 0.5))
         g.setContentView_(content)
         return g, content
     v = NSVisualEffectView.alloc().initWithFrame_(frame)
@@ -100,8 +107,6 @@ def _glass(frame, radius: float, tint: float = 0.22):
     v.setWantsLayer_(True)
     v.layer().setCornerRadius_(radius)
     v.layer().setMasksToBounds_(True)
-    content.setWantsLayer_(True)
-    content.layer().setBackgroundColor_(_cg((0.04, 0.04, 0.06), 0.55))
     v.addSubview_(content)
     return v, content
 
@@ -175,13 +180,13 @@ class HUD(NSObject):
         self.meter = MeterView.alloc().initWithFrame_(NSMakeRect(W - 18 - BARS * 5, (H - 28) / 2, BARS * 5, 28))
         self.glass.addSubview_(self.meter)
         self.title = _label(self.glass, NSMakeRect(tx, H / 2 + 2, W - tx - 20, 15), 10.5, NSFontWeightSemibold,
-                            _rgb((1, 1, 1), 0.5))
+                            _rgb((1, 1, 1), 0.68))
         self.body = _label(self.glass, NSMakeRect(tx, H / 2 - 19, W - tx - 20, 19), 14, NSFontWeightMedium,
                            _rgb((1, 1, 1), 0.95))
 
         # -- mouth video ---------------------------------------------------------------
         self.video_panel = _panel(NSMakeRect(x + (W - VW) / 2, y + H + 10, VW, VH))
-        vouter, vglass = _glass(NSMakeRect(0, 0, VW, VH), 22, tint=0.1)
+        vouter, vglass = _glass(NSMakeRect(0, 0, VW, VH), 22, scrim=0.7)
         self.video_panel.setContentView_(vouter)
         self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 6, VW - 12, VH - 12))
         self.video.setImageScaling_(NSImageScaleProportionallyUpOrDown)
