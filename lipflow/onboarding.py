@@ -347,13 +347,16 @@ class Onboarding(NSObject):
     # -- 4. practice -----------------------------------------------------------------
     def goPractice_(self, sender):
         os.makedirs(CLIPS, exist_ok=True)
-        self.sentences = practice_sentences()
-        self.i = len(saved_clips()) if saved_clips() else 0
-        if self.i >= N_SENTENCES:
-            return self.goTrain_(None)
+        # Every visit is a fresh round of new sentences; clips from earlier rounds are kept and the
+        # model retrains on all of them, so practising again keeps improving it.
+        done = {c["text"] for c in saved_clips()}
+        self.sentences = [x for x in practice_sentences(N_SENTENCES * 2) if x not in done][:N_SENTENCES]
+        self.i = 0
+        prior = len(done)
         p = self._new_page("quote.bubble", "Mouth each sentence",
                            "Hold Right Option, silently mouth the sentence at your normal pace, then let go. "
-                           "Face the camera with your mouth in good light.")
+                           "Face the camera with your mouth in good light."
+                           + (f" You have {prior} clips from before; these add to them." if prior else ""))
         self._steps(2)
         self.count = _text(p, NSMakeRect(40, 318, WW - 80, 18), "", 12, NSFontWeightSemibold,
                            center=True, color=_rgb(ACCENT))
@@ -391,6 +394,7 @@ class Onboarding(NSObject):
             self.feedback.setStringValue_(message)
             return
         path = os.path.join(CLIPS, f"{int(time.time() * 1000)}.npz")
+        self.round_clips = getattr(self, "round_clips", []) + [path]
         np.savez_compressed(path, rois=rois, text=text, raw=raw or "")
         self.feedback.setTextColor_(_rgb((1, 1, 1), 0.6))
         self.feedback.setStringValue_(f"Saved. The model read: \"{(raw or '').lower()}\"")
@@ -401,9 +405,9 @@ class Onboarding(NSObject):
         self._show_sentence()
 
     def redo_(self, sender):
-        clips = sorted(glob.glob(os.path.join(CLIPS, "*.npz")))
-        if clips and self.i > 0:
-            os.remove(clips[-1])
+        mine = getattr(self, "round_clips", [])
+        if mine and self.i > 0:
+            os.remove(mine.pop())
             self.i -= 1
             self.feedback.setStringValue_("Removed the last clip. Try it again.")
             self._show_sentence()
