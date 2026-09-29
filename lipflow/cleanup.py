@@ -220,11 +220,26 @@ class Cleaner:
     def describe(self) -> str:
         return f"{self.backend}" + (f" ({self.model})" if self.model else "")
 
-    def __call__(self, candidates: list[str], context: str = "", words: "list[str] | None" = None) -> str:
-        self._words = words or []
+    _EVERYDAY = set("a an the and or but i you he she it we they me my to of in on at is am are was be do "
+                    "so no hi hey ok oh go up us".split())
+
+    def is_common(self, word: str) -> bool:
+        """Words name-snapping must never replace: ones you use often, plus basic function words."""
+        w = word.lower()
+        return w in self._EVERYDAY or (bool(self.personal) and self.personal.uni[w] >= 3)
+
+    def __call__(self, candidates: list[str], context: str = "", words: "list[str] | None" = None,
+                 names: "list[str] | None" = None) -> str:
+        """names: extra names from what you're typing into (see context.py), for this dictation only."""
         from . import vocab
+        from .visemes import snap_names
         words = vocab.load() if words is None else words
+        names = [n for n in (names or []) if n.lower() not in {w.lower() for w in words}]
+        words = words + names
+        self._words = words
         candidates = [c for c in candidates if c.strip()]
+        # names look like other words on the lips (Miguel → MCCALL); snap them before ranking
+        candidates = list(dict.fromkeys(snap_names(c, words, self.is_common) for c in candidates))
         if self.personal:
             candidates = self.personal.rerank(candidates)
             self._similar = self.personal.similar(" ".join(candidates[:2]))

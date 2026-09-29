@@ -76,3 +76,27 @@ def test_practice_mixes_own_and_harvard(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "PHRASES", str(f))
     s = O.practice_sentences(24)
     assert sum(x in O.HARVARD for x in s) == 12 and len(set(s)) == 24
+
+
+def test_names_snap_by_lip_shape_but_everyday_words_stay():
+    from lipflow.visemes import snap_names
+    common = {"i", "am", "a", "my", "hello", "sending", "you", "message", "with", "new", "school", "tool",
+              "made", "mistake", "in", "the", "meeting"}.__contains__
+    snap = lambda t: snap_names(t, ["Miguel"], lambda w: common(w.lower()))
+    assert snap("HELLO MCCALL I AM SENDING YOU A MESSAGE") == "HELLO MIGUEL I AM SENDING YOU A MESSAGE"
+    assert snap("HELLO MC HALE I AM SENDING") == "HELLO MIGUEL I AM SENDING"
+    assert snap("HELLO MIKAEL") == "HELLO MIGUEL"
+    assert snap("I MADE A MISTAKE IN THE MEETING") == "I MADE A MISTAKE IN THE MEETING"
+
+
+def test_context_names_from_titles():
+    from lipflow.context import extract_names
+    assert extract_names("Miguel (DM) - Vizcom - Slack") == ["Miguel", "Vizcom", "Slack"]
+    assert "Priya" in extract_names("Re: design review", "Thanks Priya, I think the plan works.")
+
+
+def test_snapping_leaves_every_harvard_sentence_alone():
+    from lipflow.onboarding import HARVARD
+    from lipflow.visemes import snap_names
+    for h in HARVARD:
+        assert snap_names(h.upper(), ["Priya", "Miguel", "Vizcom", "Balance", "Flow"], lambda w: False) == h.upper()

@@ -238,6 +238,8 @@ class Lipflow(NSObject):
             return
         self.session += 1
         self.hands_free = hands_free
+        from .context import capture
+        self.ctx = capture()  # the app you're typing into is frontmost right now
         rec = self.camera.start_recording()
         self._set_status_icon(True)
         title = "Hands-free · tap to finish" if hands_free else "Listening"
@@ -420,8 +422,11 @@ class Lipflow(NSObject):
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
         ui(self.hud.set_text, candidates[0].lower())
-        text = self.cleaner(candidates, context=" ".join(self.context[-3:]))
+        ctx = getattr(self, "ctx", None)
+        text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=ctx.names if ctx else None)
         t_all = time.time() - t0
+        if ctx and ctx.names:
+            print(f"[lipflow] context: {ctx.app}, {len(ctx.names)} names")
         print(f"[lipflow] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
               f"          → typed: {text!r}  (encode {t_enc:.2f}s, beam {t_beam:.2f}s, total {t_all:.2f}s)")
         if not text:
