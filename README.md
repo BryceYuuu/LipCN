@@ -19,8 +19,8 @@ Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass l
 
 ```sh
 git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
-cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds ~/Applications/Lipflow.app
-open ~/Applications/Lipflow.app
+cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds /Applications/Lipflow.app
+open /Applications/Lipflow.app
 ```
 
 The first launch opens setup, which takes about 8 minutes:

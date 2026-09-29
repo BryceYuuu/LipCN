@@ -20,7 +20,7 @@ def main(argv=None):
 
     r = sub.add_parser("run", help="start the menu-bar dictation app (default)")
     r.add_argument("--key", default="right_option", choices=list(KEYS), help="push-to-talk key")
-    r.add_argument("--beam", type=int, default=10, help="beam size (higher = slower, slightly better)")
+    r.add_argument("--beam", type=int, default=4, help="beam size (higher = slower, about the same accuracy)")
     r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic"])
     r.add_argument("--camera", default="auto",
                    help="'auto' (the Mac's built-in camera), part of a camera's name, or a video file")

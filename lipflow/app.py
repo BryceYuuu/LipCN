@@ -47,6 +47,7 @@ def save_settings(d: dict):
 MIN_SECONDS = 0.6
 MAX_SECONDS = 60.0
 PREVIEW_EVERY = 0.45
+KEEP_CLIPS = 100  # recent dictation clips kept (96x96 grayscale mouth crops, no audio)
 TAIL_SECONDS = 0.4  # keep filming after release: the last word needs the frames after it
 JOIN_WINDOW = 45.0  # dictations this close together get a separating space
 
@@ -54,7 +55,7 @@ JOIN_WINDOW = 45.0  # dictations this close together get a separating space
 @dataclass
 class Options:
     key: str = "right_option"
-    beam: int = 10
+    beam: int = 4  # measured on 38 sentences: beam 10 25.2% WER 1.66 s/clip, beam 4 26.1% 0.99 s
     backend: str = "auto"
     camera: "int | str" = "auto"  # 'auto' = the Mac's built-in camera
     paste: bool = True
@@ -466,14 +467,18 @@ class Lipflow(NSObject):
 
     @objc.python_method
     def _save_clip(self, rois, candidates, text):
-        """Keep the mouth crops of each dictation (local only) so accuracy changes can be measured on
-        your real clips. Turn off with "save_clips": false in settings.json."""
+        """Keep the mouth crops of recent dictations (local only, last KEEP_CLIPS) so accuracy changes
+        can be measured on your real clips. Off switch in Settings."""
         if not self.settings.get("save_clips", True):
             return
         d = os.path.join(os.path.dirname(HISTORY), "clips", "dictations")
         os.makedirs(d, exist_ok=True)
         np.savez_compressed(os.path.join(d, f"{int(time.time() * 1000)}.npz"), rois=rois,
                             raw=np.array(candidates), text=text)
+        # Only the recent ones are useful (to measure accuracy on your real dictations): keep 100.
+        old = sorted(os.listdir(d))[:-KEEP_CLIPS]
+        for f in old:
+            os.remove(os.path.join(d, f))
 
     @objc.python_method
     def _train(self, ob):
@@ -540,12 +545,15 @@ class Lipflow(NSObject):
 
 
 class AppDelegate(NSObject):
-    """Opening Lipflow.app while it's already running brings up the setup window, since the
-    menu-bar icon can be hidden behind the notch when the menu bar is full."""
+    """Opening Lipflow.app while it's already running brings up Settings (or setup, first time),
+    since the menu-bar icon can be hidden behind the notch when the menu bar is full."""
 
     def applicationShouldHandleReopen_hasVisibleWindows_(self, app, visible):
         if self.lf is not None and not self.lf.loading:
-            self.lf.show_setup()
+            if self.lf.settings.get("onboarded"):
+                self.lf.openSettings_(None)
+            else:
+                self.lf.show_setup()
         return False
 
 

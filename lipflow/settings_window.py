@@ -117,7 +117,7 @@ class Settings(NSObject):
         self.cam_popup = self._popup(p, y - 82, "Camera", ["Automatic (built-in)"] + cams, cur_name, "pickCam:")
         self.ctx_switch = self._switch(p, y - 124, "Use names from the app I'm typing in",
                                        s.get("use_context", True), "toggleContext:")
-        self.clip_switch = self._switch(p, y - 166, "Save dictation clips to measure accuracy",
+        self.clip_switch = self._switch(p, y - 166, "Keep my last 100 clips to measure accuracy",
                                         s.get("save_clips", True), "toggleClips:")
         _text(p, NSMakeRect(36, y - 206, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Open my data folder", "openData:", NSMakeRect(36, 40, 190, 34)))

@@ -5,7 +5,7 @@ terminal, Lipflow borrows the terminal's permissions (and asks for them in the t
 as an app it gets its own entries called "Lipflow", starts from Launchpad/Spotlight, and can be
 added to Login Items.
 
-    uv run python scripts/make_app.py [--dest ~/Applications]
+    uv run python scripts/make_app.py [--dest /Applications]
 """
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def make_icns(dest_icns: str):
     shutil.rmtree(tmp)
 
 
-def build(dest_dir: str) -> str:
+def build(dest_dir: str = "/Applications") -> str:
     app = os.path.join(os.path.expanduser(dest_dir), "Lipflow.app")
     if os.path.exists(app):
         shutil.rmtree(app)
@@ -107,5 +107,5 @@ exec "{ROOT}/.venv/bin/python" -m lipflow "$@" >> "{log}" 2>&1
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--dest", default="~/Applications")
+    ap.add_argument("--dest", default="/Applications")
     print(build(ap.parse_args().dest))
