@@ -28,7 +28,8 @@ class Recording:
     mouth_open: list[float] = field(default_factory=list)
 
     def snapshot(self):
-        n = len(self.ts)
+        # The capture thread appends to these one after another; take a length all three have.
+        n = min(len(self.ts), len(self.grays), len(self.anchors))
         return self.ts[:n], self.grays[:n], self.anchors[:n]
 
     @property
@@ -106,8 +107,8 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
         if not cap.isOpened():
-            raise RuntimeError("Could not open the camera. Grant camera access to your terminal app in "
-                               "System Settings → Privacy & Security → Camera.")
+            raise RuntimeError("Could not open the camera. Allow your terminal in "
+                               "Settings → Privacy & Security → Camera")
         return cap
 
     def _run(self):
@@ -173,3 +174,44 @@ def mouth_thumbnail(frame_bgr: np.ndarray, obs: "FaceObs | None", size: int = 11
         return None
     crop = cv2.resize(frame_bgr[y0:y1, x0:x1], (size, size), interpolation=cv2.INTER_AREA)
     return cv2.flip(crop, 1)
+
+
+PINK = (115, 92, 250)      # BGR
+PINK_SOFT = (170, 150, 255)
+
+
+def mouth_view(frame_bgr: np.ndarray, obs: "FaceObs | None", w: int = 240, h: int = 150) -> np.ndarray:
+    """Mirrored close-up of the lips with the tracked contour and points drawn on, for the HUD.
+
+    Without a face it shows the whole (dimmed) frame so you can see how to line yourself up.
+    """
+    fh, fw = frame_bgr.shape[:2]
+    if obs is None:
+        view = cv2.resize(frame_bgr, (w, h), interpolation=cv2.INTER_AREA)
+        view = cv2.flip((view * 0.45).astype(np.uint8), 1)
+        cv2.putText(view, "looking for your face...", (14, h - 14), cv2.FONT_HERSHEY_SIMPLEX, 0.45,
+                    (235, 235, 235), 1, cv2.LINE_AA)
+        return view
+    lips = obs.outer_lips
+    cx, cy = lips.mean(0)
+    half_w = max(np.ptp(lips[:, 0]), 10) * 0.9
+    half_h = half_w * h / w
+    x0, y0 = cx - half_w, cy - half_h
+    scale = w / (2 * half_w)
+    M = np.float32([[scale, 0, -x0 * scale], [0, scale, -y0 * scale]])
+    view = cv2.warpAffine(frame_bgr, M, (w, h), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
+    view = cv2.flip(view, 1)
+
+    def to_view(pts):
+        p = (pts - (x0, y0)) * scale
+        p[:, 0] = w - 1 - p[:, 0]
+        return p
+
+    overlay = view.copy()
+    for contour in (obs.outer_lips, obs.inner_lips):
+        cv2.polylines(overlay, [np.round(to_view(contour) * 4).astype(np.int32)], True, PINK_SOFT, 1,
+                      cv2.LINE_AA, shift=2)
+    view = cv2.addWeighted(overlay, 0.7, view, 0.3, 0)
+    for x, y in to_view(obs.lip_points):
+        cv2.circle(view, (int(round(x * 4)), int(round(y * 4))), 8, PINK, -1, cv2.LINE_AA, shift=2)
+    return view

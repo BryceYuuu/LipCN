@@ -18,7 +18,7 @@ from AppKit import (
 from Foundation import NSObject
 from PyObjCTools import AppHelper
 
-from .camera import Camera, Recording, mouth_thumbnail
+from .camera import Camera, Recording, mouth_view
 from .cleanup import Cleaner
 from .face import mouth_rois
 from .hotkey import KEYS, PushToTalk
@@ -81,9 +81,21 @@ class Lipflow(NSObject):
         if self.opts.paste and not Quartz.CGPreflightPostEventAccess():
             Quartz.CGRequestPostEventAccess()
             print("[lipflow] Allow your terminal under Privacy & Security → Accessibility so Lipflow can paste.")
+        self._request_camera()
         self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
         threading.Thread(target=self._worker, name="lipflow-model", daemon=True).start()
         self.jobs.put(("load",))
+
+    @objc.python_method
+    def _request_camera(self):
+        from AVFoundation import AVCaptureDevice, AVMediaTypeVideo
+        status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo)
+        if status == 0:  # not determined: show the system prompt now, from the main thread
+            AVCaptureDevice.requestAccessForMediaType_completionHandler_(
+                AVMediaTypeVideo, lambda granted: print(f"[lipflow] camera access {'granted' if granted else 'denied'}"))
+        elif status in (1, 2):
+            print("[lipflow] camera access is denied: System Settings → Privacy & Security → Camera → enable your terminal")
+            self.hud.show("error", "No camera access", "Enable your terminal in Settings → Privacy → Camera", 6.0)
 
     @objc.python_method
     def _build_menu(self):
@@ -171,7 +183,7 @@ class Lipflow(NSObject):
         if rec is not None and rec.duration > MAX_SECONDS:
             ui(self.on_stop)
             return
-        thumb = mouth_thumbnail(frame, obs)
+        thumb = mouth_view(frame, obs)
         level = obs.mouth_open * 2.6 if obs else 0.0
         ui(self.hud.set_frame, thumb, level)
 
@@ -180,8 +192,15 @@ class Lipflow(NSObject):
     def _preview_loop(self, session: int, rec: Recording):
         if not self.opts.live_preview:
             return
+        waited = 0.0
         while self.session == session:
             time.sleep(PREVIEW_EVERY)
+            waited += PREVIEW_EVERY
+            if not rec.ts and (self.camera.error or waited > 4):
+                msg = self.camera.error or "The camera isn't sending frames"
+                print(f"[lipflow] camera problem: {msg}")
+                ui(self.hud.show, "error", "Camera problem", msg[:90], 5.0)
+                return
             if self.session != session or self.preview_busy or len(rec.ts) < 15:
                 continue
             self.preview_busy = True
@@ -247,6 +266,8 @@ class Lipflow(NSObject):
         elif np.std([m for m in rec.mouth_open if m > 0] or [0]) < 0.012:
             problem = ("No lip movement", "Mouth the words clearly — no sound needed")
         if problem:
+            print(f"[lipflow] skipped {rec.duration:.1f}s clip ({len(rec.ts)} frames, face in "
+                  f"{rec.face_ratio:.0%}): {problem[0]}")
             ui(self.hud.show, "error", problem[0], problem[1], 2.2)
             return
         rois = self._rois(rec)

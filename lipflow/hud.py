@@ -22,6 +22,7 @@ from AppKit import (
 from Foundation import NSObject
 
 W, H = 440, 64
+VW, VH = 240, 150  # live mouth video above the pill
 THUMB = 48
 ACCENT = (0.98, 0.36, 0.45)  # lip pink
 
@@ -96,6 +97,28 @@ class HUD(NSObject):
         p.setHidesOnDeactivate_(False)
         p.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary)
 
+        # Live mouth video, floating just above the pill
+        self.video_panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            NSMakeRect(x + (W - VW) / 2, y + H + 10, VW, VH),
+            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False)
+        vp = self.video_panel
+        vp.setLevel_(NSStatusWindowLevel)
+        vp.setOpaque_(False)
+        vp.setBackgroundColor_(NSColor.clearColor())
+        vp.setHasShadow_(True)
+        vp.setIgnoresMouseEvents_(True)
+        vp.setHidesOnDeactivate_(False)
+        vp.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary)
+        self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, VW, VH))
+        self.video.setImageScaling_(NSImageScaleProportionallyUpOrDown)
+        self.video.setWantsLayer_(True)
+        self.video.layer().setCornerRadius_(18)
+        self.video.layer().setMasksToBounds_(True)
+        self.video.layer().setBorderWidth_(1.0)
+        self.video.layer().setBorderColor_(Quartz.CGColorCreateSRGB(1, 1, 1, 0.15))
+        self.video.layer().setBackgroundColor_(Quartz.CGColorCreateSRGB(0.07, 0.07, 0.09, 0.92))
+        vp.setContentView_(self.video)
+
         self.view = PillView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
         p.setContentView_(self.view)
 
@@ -150,11 +173,16 @@ class HUD(NSObject):
         full = W - f.origin.x - 22
         self.body.setFrameSize_((full - (14 * 5 + 12 if bars else 0), f.size.height))
         self.title.setFrameSize_((full, self.title.frame().size.height))
-        self.glyph.setStringValue_({"done": "✓", "error": "!", "reading": "👄"}.get(mode, ""))
-        self.glyph.setTextColor_(_rgb(0.45, 0.9, 0.6) if mode == "done" else _rgb(*ACCENT) if mode == "error"
+        self.glyph.setStringValue_({"done": "✓", "error": "!", "reading": "👄", "listening": "●"}.get(mode, ""))
+        self.glyph.setTextColor_(_rgb(0.45, 0.9, 0.6) if mode == "done" else _rgb(*ACCENT) if mode in ("error", "listening")
                                  else _rgb(1, 1, 1, 0.9))
-        if mode != "listening":
-            self.thumb.setImage_(None)
+        self.thumb.setImage_(None)
+        if mode == "listening":
+            self.video_panel.setAlphaValue_(1.0)
+            self.video_panel.orderFrontRegardless()
+        else:
+            self.video_panel.orderOut_(None)
+            self.video.setImage_(None)
         if mode != "listening":
             self.view.levels = [0.0] * len(self.view.levels)
         if mode == "reading":
@@ -173,10 +201,9 @@ class HUD(NSObject):
         self.body.setStringValue_(body)
 
     @objc.python_method
-    def set_frame(self, thumb_bgr, level: float):
-        if thumb_bgr is not None:
-            self.thumb.setImage_(_nsimage(thumb_bgr))
-            self.glyph.setStringValue_("")
+    def set_frame(self, video_bgr, level: float):
+        if video_bgr is not None and self.view.mode == "listening":
+            self.video.setImage_(_nsimage(video_bgr))
         lv = self.view.levels
         lv.pop(0)
         lv.append(float(max(0.0, min(1.0, level))))
@@ -187,7 +214,8 @@ class HUD(NSObject):
         self._cancel_hide()
         self._stop_anim()
         self.panel.orderOut_(None)
-        self.thumb.setImage_(None)
+        self.video_panel.orderOut_(None)
+        self.video.setImage_(None)
 
     # -- internals -----------------------------------------------------------------
     def fadeOut_(self, timer):
@@ -195,6 +223,7 @@ class HUD(NSObject):
         NSAnimationContext.beginGrouping()
         NSAnimationContext.currentContext().setDuration_(0.35)
         self.panel.animator().setAlphaValue_(0.0)
+        self.video_panel.animator().setAlphaValue_(0.0)
         NSAnimationContext.endGrouping()
         self._hide_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             0.4, self, "orderOut:", None, False)

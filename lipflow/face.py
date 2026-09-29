@@ -28,6 +28,7 @@ _LIPS = [0, 13, 14, 17, 37, 39, 40, 61, 78, 80, 81, 82, 84, 87, 88, 91, 95, 146,
          405, 409, 415]
 _OUTER_LIPS = [61, 185, 40, 39, 37, 0, 267, 269, 270, 409, 291, 375, 321, 405, 314, 17, 84,
                181, 91, 146]
+_INNER_LIPS = [78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308, 324, 318, 402, 317, 14, 87, 178, 88, 95]
 _UPPER_INNER, _LOWER_INNER = 13, 14
 
 
@@ -91,6 +92,14 @@ class FaceObs:
     @property
     def outer_lips(self) -> np.ndarray:
         return self.pts[_OUTER_LIPS]
+
+    @property
+    def inner_lips(self) -> np.ndarray:
+        return self.pts[_INNER_LIPS]
+
+    @property
+    def lip_points(self) -> np.ndarray:
+        return self.pts[_LIPS]
 
 
 def _interpolate(anchors: list["np.ndarray | None"]) -> "list[np.ndarray] | None":

@@ -7,6 +7,9 @@ import sys
 
 os.environ.setdefault("GLOG_minloglevel", "2")  # quiet MediaPipe
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
+# OpenCV would ask for camera access from its capture thread, which silently fails; the app
+# asks on the main thread instead (app.request_camera).
+os.environ.setdefault("OPENCV_AVFOUNDATION_SKIP_AUTH", "1")
 
 
 def main(argv=None):
