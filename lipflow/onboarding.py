@@ -152,9 +152,21 @@ class Onboarding(NSObject):
     # -- window --------------------------------------------------------------------
     @objc.python_method
     def show(self):
-        self.welcome()
-        NSApp.activateIgnoringOtherApps_(True)
-        self.win.makeKeyAndOrderFront_(None)
+        if self.page is None:
+            self.welcome()
+        self.app.hud.hide()  # drop the "Loading…" pill
+        from AppKit import NSApplication, NSFloatingWindowLevel
+        app = NSApplication.sharedApplication()
+        # A menu-bar-only app isn't frontmost, so makeKeyAndOrderFront alone leaves the window hidden
+        # on macOS 26. Float it, force it on screen, then activate.
+        self.win.setLevel_(NSFloatingWindowLevel)
+        self.win.center()
+        self.win.orderFrontRegardless()
+        self.win.makeKeyWindow()
+        if hasattr(app, "activate"):
+            app.activate()
+        else:
+            app.activateIgnoringOtherApps_(True)
 
     @objc.python_method
     def _new_page(self, icon, title, subtitle):

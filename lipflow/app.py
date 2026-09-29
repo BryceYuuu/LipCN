@@ -513,10 +513,24 @@ class Lipflow(NSObject):
                                 "cleanup": self.cleaner.describe()}) + "\n")
 
 
+class AppDelegate(NSObject):
+    """Opening Lipflow.app while it's already running brings up the setup window, since the
+    menu-bar icon can be hidden behind the notch when the menu bar is full."""
+
+    def applicationShouldHandleReopen_hasVisibleWindows_(self, app, visible):
+        if self.lf is not None and not self.lf.loading:
+            self.lf.show_setup()
+        return False
+
+
 def run(opts: Options):
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)
     lf = Lipflow.alloc().initWithOptions_(opts)
+    delegate = AppDelegate.alloc().init()
+    delegate.lf = lf
+    app.setDelegate_(delegate)
+    lf._delegate = delegate
     lf.start()
     print(f"[lipflow] hold {opts.key.replace('_', ' ')} and mouth your words · double-tap for hands-free · "
           f"Esc cancels · Ctrl-C quits")
