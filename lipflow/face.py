@@ -131,6 +131,9 @@ def mouth_rois(gray_frames: list[np.ndarray], anchors: list["np.ndarray | None"]
     half = crop // 2
     patches = []
     for i, frame in enumerate(gray_frames):
+        offset = None
+        if isinstance(frame, tuple):  # (face crop, (x0, y0)): the capture keeps only the face region
+            frame, offset = frame
         m = min(window_margin // 2, i, n - 1 - i)
         smoothed = np.mean(lms[i - m:i + m + 1], axis=0)
         smoothed += lms[i].mean(axis=0) - smoothed.mean(axis=0)
@@ -138,9 +141,12 @@ def mouth_rois(gray_frames: list[np.ndarray], anchors: list["np.ndarray | None"]
                                             method=cv2.LMEDS)
         if tf is None:
             tf = cv2.estimateAffinePartial2D(lms[i].astype(np.float32), STABLE_REFERENCE.astype(np.float32))[0]
+        mouth = smoothed[3] @ tf[:, :2].T + tf[:, 2]  # landmarks are in full-frame coordinates
+        if offset is not None:  # the image is a crop: shift the translation to crop pixels
+            tf = tf.copy()
+            tf[:, 2] += tf[:, :2] @ np.asarray(offset, dtype=tf.dtype)
         warped = cv2.warpAffine(frame, tf, (256, 256), flags=cv2.INTER_LINEAR,
                                 borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-        mouth = smoothed[3] @ tf[:, :2].T + tf[:, 2]
         cx = int(round(np.clip(mouth[0], half, 256 - half)))
         cy = int(round(np.clip(mouth[1], half, 256 - half)))
         patches.append(warped[cy - half:cy + half, cx - half:cx + half])

@@ -37,3 +37,13 @@ def test_reads_a_real_clip():
     words = set(text.split())
     truth = set("BORN IN NEW YORK CITY AND RAISED MOSTLY IN CHICAGO NANCY DAVIS GRADUATED FROM SMITH COLLEGE".split())
     assert len(words & truth) / len(truth) > 0.8, text
+
+
+def test_face_crop_offsets_give_the_same_mouth_patch():
+    """A crop + offset must produce exactly the patch the full frame would."""
+    rng = np.random.default_rng(0)
+    frames = [rng.integers(0, 255, (720, 1280), dtype=np.uint8) for _ in range(5)]
+    anchors = [STABLE_REFERENCE * 2.0 + (400, 200) for _ in range(5)]
+    full = mouth_rois(frames, anchors)
+    crops = [(f[150:650, 300:900], (300, 150)) for f in frames]
+    assert np.abs(mouth_rois(crops, anchors).astype(int) - full.astype(int)).max() <= 1

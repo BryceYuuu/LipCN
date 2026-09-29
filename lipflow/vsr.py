@@ -122,6 +122,8 @@ class LipReader:
 
     @torch.inference_mode()
     def encode(self, rois: np.ndarray) -> torch.Tensor:
+        # Tried and measured on the benchmark, no gain: averaging with the mirrored clip (36.3% ->
+        # 37.4% WER), beam 20, CTC weight 0.2/0.3, LM weight 0.2-0.6. Stock decoding stays.
         x = self.to_tensor(rois).unsqueeze(0).to(self.enc_device)
         enc, _ = self.model.encoder(x, None)
         return enc.squeeze(0).to(self.device)

@@ -74,7 +74,7 @@ def resolve_camera(pref) -> "int | str":
 
 
 class Camera:
-    def __init__(self, index: "int | str" = "auto", width: int = 640, height: int = 480, idle_close: float = 45.0,
+    def __init__(self, index: "int | str" = "auto", width: int = 1280, height: int = 720, idle_close: float = 45.0,
                  on_frame=None):
         self.index, self.width, self.height = index, width, height
         self.idle_close = idle_close
@@ -183,7 +183,7 @@ class Camera:
                     with self._lock:
                         if self._rec is rec:
                             rec.ts.append(now)
-                            rec.grays.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+                            rec.grays.append(face_crop(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), obs, rec))
                             rec.anchors.append(obs.anchors if obs else None)
                             rec.mouth_open.append(obs.mouth_open if obs else 0.0)
                 if self.on_frame is not None:
@@ -197,6 +197,21 @@ class Camera:
             self._cap.release()
             self._cap = None
             self.ready.clear()
+
+
+def face_crop(gray: np.ndarray, obs: "FaceObs | None", rec: "Recording") -> tuple:
+    """Keep only the face (with margin) at full resolution, plus its offset: 720p detail without
+    ~1 GB per minute of full frames. Frames without a face reuse the last box."""
+    h, w = gray.shape
+    if obs is not None:
+        x0, y0 = obs.pts.min(0)
+        x1, y1 = obs.pts.max(0)
+        cx, cy, side = (x0 + x1) / 2, (y0 + y1) / 2, max(x1 - x0, y1 - y0) * 1.5
+        rec._box = (int(max(cx - side / 2, 0)), int(max(cy - side / 2, 0)),
+                    int(min(cx + side / 2, w)), int(min(cy + side / 2, h)))
+    box = getattr(rec, "_box", None) or (0, 0, w, h)
+    bx0, by0, bx1, by1 = box
+    return np.ascontiguousarray(gray[by0:by1, bx0:bx1]), (bx0, by0)
 
 
 def mouth_thumbnail(frame_bgr: np.ndarray, obs: "FaceObs | None", size: int = 112) -> "np.ndarray | None":
