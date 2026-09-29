@@ -39,9 +39,19 @@ top-3 guesses plus your last few dictations to an LLM, which picks the sentence 
 fixes casing, punctuation and numbers. The first backend that's available is used:
 
 1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
-   `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency).
-2. **Ollama**: run `ollama serve` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
-3. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
+   `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
+   mis-read sentences.
+2. **Local** (the default without a key): Qwen3-0.6B 4-bit running in-process on Apple Silicon
+   via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
+   Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
+   worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
+3. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
+4. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
+
+**Custom words.** Names are the hardest thing to lip-read (a name is just lip shapes). Put yours
+in 👄 → *Edit custom words*, one per line (`~/Library/Application Support/Lipflow/words.txt`).
+A guess that contains one of your words wins over the others and gets your capitalization, and
+the LLM is told about them.
 
 ## Using it
 
@@ -51,6 +61,17 @@ fixes casing, punctuation and numbers. The first backend that's available is use
 | Double-tap **Right Option** … tap again | hands-free (up to 60 s) |
 | **Esc** while listening | cancel |
 | 👄 menu → Copy last dictation / Open history | get text back |
+| 👄 menu → **Type while I talk (live)** (or `--live-type`) | words appear in the app as you mouth them, then get swapped for the cleaned sentence when you let go |
+
+Lipflow keeps filming for 0.4 s after you release the key, because the model needs the frames
+after the last word to read it.
+
+### Live stream
+
+Everything Lipflow reads is streamed as Server-Sent Events on `http://127.0.0.1:8765/events`
+(local only): `start`, `partial` (the live guess, about twice a second), `final` (cleaned text,
+raw top-3 guesses, latency) and `cancel`. Open `http://127.0.0.1:8765/` for a live captions page,
+or `curl -N http://127.0.0.1:8765/events`. Change the port with `--port`, or turn it off with `--port 0`.
 
 While you talk, a pill at the bottom of the screen shows your mouth, a lip-motion meter and a live
 guess of the words. When you let go it types the cleaned-up sentence.
@@ -62,7 +83,9 @@ Options: `uv run lipflow --help`
 
 ```
 --key {right_option,left_option,right_command,right_control,fn}
---cleanup {auto,claude,ollama,basic}
+--cleanup {auto,claude,local,ollama,basic}
+--live-type       type words into the app while you talk
+--port N          live SSE stream port (0 = off)
 --beam N          beam size (default 10)
 --copy-only       copy to the clipboard instead of pasting
 --camera N|FILE   camera index, or a video file to stand in for the webcam

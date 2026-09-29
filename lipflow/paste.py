@@ -8,14 +8,19 @@ import Quartz
 from AppKit import NSPasteboard, NSPasteboardTypeString
 
 _V = 9  # kVK_ANSI_V
+MARK = 0x11FF10  # kCGEventSourceUserData on every event Lipflow posts, so its own hotkey tap ignores them
+
+
+def _post(ev, flags=0):
+    Quartz.CGEventSetFlags(ev, flags)  # never inherit the held push-to-talk modifier
+    Quartz.CGEventSetIntegerValueField(ev, Quartz.kCGEventSourceUserData, MARK)
+    Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, ev)
 
 
 def _press_cmd_v():
     src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
     for down in (True, False):
-        ev = Quartz.CGEventCreateKeyboardEvent(src, _V, down)
-        Quartz.CGEventSetFlags(ev, Quartz.kCGEventFlagMaskCommand)
-        Quartz.CGEventPost(Quartz.kCGAnnotatedSessionEventTap, ev)
+        _post(Quartz.CGEventCreateKeyboardEvent(src, _V, down), Quartz.kCGEventFlagMaskCommand)
         time.sleep(0.01)
 
 
@@ -42,3 +47,27 @@ def copy_text(text: str):
     pb = NSPasteboard.generalPasteboard()
     pb.clearContents()
     pb.setString_forType_(text, NSPasteboardTypeString)
+
+
+_BACKSPACE = 51
+
+
+def type_text(text: str):
+    """Type text as keystrokes (no clipboard): used for live streaming, where pasting on every
+    word would keep clobbering the clipboard."""
+    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for i in range(0, len(text), 16):  # the event API takes up to ~20 UTF-16 units at a time
+        chunk = text[i:i + 16]
+        for down in (True, False):
+            ev = Quartz.CGEventCreateKeyboardEvent(src, 0, down)
+            Quartz.CGEventKeyboardSetUnicodeString(ev, len(chunk), chunk)
+            _post(ev)
+        time.sleep(0.004)
+
+
+def backspace(n: int):
+    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
+    for _ in range(n):
+        for down in (True, False):
+            _post(Quartz.CGEventCreateKeyboardEvent(src, _BACKSPACE, down))
+        time.sleep(0.002)

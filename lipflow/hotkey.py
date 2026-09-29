@@ -55,6 +55,8 @@ class PushToTalk:
         if etype in (Quartz.kCGEventTapDisabledByTimeout, Quartz.kCGEventTapDisabledByUserInput):
             Quartz.CGEventTapEnable(self._tap, True)
             return event
+        if Quartz.CGEventGetIntegerValueField(event, Quartz.kCGEventSourceUserData) == 0x11FF10:
+            return event  # our own typing / paste
         code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
         if etype == Quartz.kCGEventKeyDown:
             if code == ESC and self.active:

@@ -18,3 +18,11 @@ def test_basic_cleanup():
 def test_prompt_lists_candidates_and_context():
     p = _user_prompt(["A B", "A C"], "earlier text")
     assert "1. A B" in p and "2. A C" in p and "earlier text" in p
+
+
+def test_custom_words_pick_the_guess_and_fix_case():
+    from lipflow.cleanup import Cleaner
+    c = Cleaner("basic")
+    guesses = ["HELLO MCCALL I AM SENDING YOU A MESSAGE", "HELLO MIGUEL I AM SENDING YOU A MESSAGE"]
+    assert c(guesses, words=["Miguel"]) == "Hello Miguel I am sending you a message."
+    assert c(guesses, words=[]) == "Hello mccall I am sending you a message."

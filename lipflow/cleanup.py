@@ -7,7 +7,8 @@ before can usually recover the intended sentence.
 
 Backends, first available wins:
   claude  – ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) set
-  ollama  – a local Ollama server on :11434 (LIPFLOW_OLLAMA_MODEL, default qwen3:4b)
+  local   – a tiny on-device model via MLX (Qwen3-0.6B 4-bit, ~350 MB, ~0.2 s); LIPFLOW_LOCAL_MODEL
+  ollama  – a local Ollama server on :11434 (LIPFLOW_OLLAMA_MODEL, default qwen3:4b); only if chosen
   basic   – offline casing + punctuation rules
 """
 from __future__ import annotations
@@ -30,8 +31,11 @@ Rules:
 - If the candidates are gibberish with no plausible reading, output the best candidate in sentence case."""
 
 
-def _user_prompt(candidates: list[str], context: str) -> str:
+def _user_prompt(candidates: list[str], context: str, words: "list[str] | None" = None) -> str:
     lines = []
+    if words:
+        lines.append("Names and terms the user often says (prefer these when a mis-read looks like one): "
+                     + ", ".join(words) + "\n")
     if context:
         lines.append(f"Text the user dictated just before this (for context only, don't repeat it):\n{context}\n")
     lines.append("Candidates:")
@@ -75,6 +79,32 @@ def numbers_to_digits(t: str) -> str:
     return " ".join(out)
 
 
+# Tiny models copy whatever formatting they're shown, so they get lowercase guesses, a short
+# instruction and worked examples instead of the long prompt above.
+SMALL_SYSTEM = ("You fix text from a lip-reading app. Words that look alike on the lips get confused "
+                "(p/b/m, f/v, t/d/n, s/z). The user gives guesses, best first. Reply with the one sentence they "
+                "most likely said, with normal capitalization and punctuation. Keep their words; only fix words "
+                "that don't make sense. Reply with the sentence only.")
+SMALL_SHOTS = [
+    ("guesses:\n- today at george washington presidents have delivered some form of final message wallet officer "
+     "a fa well addressed to the american people",
+     "Since the days of George Washington, presidents have delivered some form of final message while in office, "
+     "a farewell address to the American people."),
+    ("names: Priya\nguesses:\n- hi pria can we meet at bored thirty\n- hi pre a can we meet at four thirty",
+     "Hi Priya, can we meet at 4:30?"),
+    ("guesses:\n- i think the bran is ready to ship next week", "I think the plan is ready to ship next week."),
+]
+LOCAL_MODEL = "mlx-community/Qwen3-0.6B-4bit"
+
+
+def small_messages(candidates: list[str], context: str, words: "list[str] | None") -> list[dict]:
+    u = (f"names: {', '.join(words)}\n" if words else "") + "guesses:\n" + "\n".join("- " + c.lower() for c in candidates)
+    msgs = [{"role": "system", "content": SMALL_SYSTEM}]
+    for a, b in SMALL_SHOTS:
+        msgs += [{"role": "user", "content": a}, {"role": "assistant", "content": b}]
+    return msgs + [{"role": "user", "content": u}]
+
+
 def basic_cleanup(text: str) -> str:
     t = numbers_to_digits(text.strip().lower())
     if not t:
@@ -93,7 +123,11 @@ class Cleaner:
         self.backend = self._pick(backend)
         self.model = None
         self._client = None
-        if self.backend == "claude":
+        self._mlx = None
+        self._words: list[str] = []
+        if self.backend == "local":
+            self.model = os.environ.get("LIPFLOW_LOCAL_MODEL", LOCAL_MODEL)
+        elif self.backend == "claude":
             import anthropic
             self._client = anthropic.Anthropic(timeout=8.0, max_retries=1)
             self.model = os.environ.get("LIPFLOW_MODEL", "claude-opus-5-5")
@@ -112,19 +146,37 @@ class Cleaner:
             return backend
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
             return "claude"
+        try:
+            import mlx_lm  # noqa: F401  (Apple Silicon only)
+            return "local"
+        except ImportError:
+            pass
         if self._ollama_up():
             return "ollama"
         return "basic"
 
+    def warmup(self):
+        """Load (and on first run download) the local model before the first dictation."""
+        if self.backend == "local" and self._mlx is None:
+            from mlx_lm import load
+            self._mlx = load(self.model)
+            self._local(["HELLO"], "")
+
     def describe(self) -> str:
         return f"{self.backend}" + (f" ({self.model})" if self.model else "")
 
-    def __call__(self, candidates: list[str], context: str = "") -> str:
-        candidates = [c for c in candidates if c.strip()]
+    def __call__(self, candidates: list[str], context: str = "", words: "list[str] | None" = None) -> str:
+        self._words = words or []
+        from . import vocab
+        words = vocab.load() if words is None else words
+        candidates = vocab.rerank([c for c in candidates if c.strip()], words)
         if not candidates:
             return ""
+        self._words = words or []
         try:
-            if self.backend == "claude":
+            if self.backend == "local":
+                out = self._local(candidates, context)
+            elif self.backend == "claude":
                 out = self._claude(candidates, context)
             elif self.backend == "ollama":
                 out = self._ollama(candidates, context)
@@ -133,7 +185,7 @@ class Cleaner:
         except Exception as e:  # never lose a dictation to a network hiccup
             print(f"[cleanup] {self.backend} failed ({e.__class__.__name__}: {e}); using basic cleanup")
             out = None
-        return (out or basic_cleanup(candidates[0])).strip()
+        return vocab.apply_case((out or basic_cleanup(candidates[0])).strip(), words)
 
     def _claude(self, candidates: list[str], context: str) -> "str | None":
         resp = self._client.beta.messages.create(
@@ -143,11 +195,25 @@ class Cleaner:
             output_config={"effort": "low"},
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-            messages=[{"role": "user", "content": _user_prompt(candidates, context)}],
+            messages=[{"role": "user", "content": _user_prompt(candidates, context, self._words)}],
         )
         if resp.stop_reason == "refusal":
             return None
         return "".join(b.text for b in resp.content if b.type == "text") or None
+
+    def _local(self, candidates: list[str], context: str) -> "str | None":
+        from mlx_lm import generate
+        if self._mlx is None:
+            self.warmup()
+        model, tok = self._mlx
+        prompt = tok.apply_chat_template(small_messages(candidates, context, self._words), add_generation_prompt=True,
+                                         tokenize=False, enable_thinking=False)
+        out = generate(model, tok, prompt=prompt, max_tokens=160, verbose=False)
+        out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().split("\n")[0].strip()
+        # a tiny model that answers instead of fixing, or wanders off, isn't trusted
+        if not out or len(out) > 2 * len(candidates[0]) + 20 or out.isupper():
+            return None
+        return out
 
     def _ollama(self, candidates: list[str], context: str) -> "str | None":
         r = requests.post("http://127.0.0.1:11434/api/chat", timeout=20, json={
@@ -155,7 +221,7 @@ class Cleaner:
             "stream": False,
             "think": False,
             "messages": [{"role": "system", "content": SYSTEM},
-                         {"role": "user", "content": _user_prompt(candidates, context)}],
+                         {"role": "user", "content": _user_prompt(candidates, context, self._words)}],
             "options": {"temperature": 0},
         })
         r.raise_for_status()

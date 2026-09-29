@@ -63,3 +63,13 @@ def test_escape_cancels():
     _flags(ptt, True)
     _key(ptt, hotkey.ESC)
     assert log[-1] == ("cancel", False)
+
+
+def test_ignores_lipflows_own_keystrokes():
+    from lipflow.paste import MARK
+    ptt, log = make()
+    _flags(ptt, True)
+    ev = Quartz.CGEventCreateKeyboardEvent(None, 0, True)
+    Quartz.CGEventSetIntegerValueField(ev, Quartz.kCGEventSourceUserData, MARK)
+    ptt._callback(None, Quartz.kCGEventKeyDown, ev, None)  # live typing while the key is held
+    assert log == [("start", False)]
