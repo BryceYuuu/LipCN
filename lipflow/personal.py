@@ -154,6 +154,19 @@ class Personal:
     def __bool__(self):
         return bool(self.phrases)
 
+    _STOP = set("""a an the and or but if of to in on at for with from by as is are was were be been am i
+        you he she it we they me my your our their this that these those do does did have has had
+        not no so just can will would could should there here what when where who how why all
+        about up out then than too very really also like get got go going im it's i'm don't""".split())
+
+    def common_words(self, n: int = 120) -> list[str]:
+        """Your most-used distinctive words (function words dropped), for the model's prompt."""
+        return [w for w, _ in self.uni.most_common(n + 200) if w != "<s>" and w not in self._STOP
+                and len(w) > 2][:n]
+
+    def knows(self, word: str, min_count: int = 2) -> bool:
+        return self.uni[word] >= min_count
+
     def logprob(self, text: str) -> float:
         """Average per-word log P under an interpolated bigram model (higher = more like you)."""
         w = ["<s>"] + words_of(text)

@@ -38,3 +38,12 @@ def test_small_model_may_not_invent_words():
     assert within_guesses("Hello, can you guess what I'm saying?", guesses, strict=False)
     assert not within_guesses("Hello, can you eat them?", guesses, strict=False)
     assert fix_case("hello miguel i'm here") == "Hello miguel I'm here"
+
+
+def test_vocab_edit_guard():
+    from lipflow.cleanup import within_guesses
+    guesses = ["HELLO MIGUEL I AM SENDING YOU A MESSAGE WITH MY NEW", "HELLO MIGUEL I AM SENDING YOU A MESSAGE WITH MY NEWS"]
+    known = {"tool", "deck"}.__contains__
+    assert within_guesses("Hello Miguel, I am sending you a message with my new tool.", guesses, False, known, 1)
+    assert not within_guesses("Hello Miguel, I am sending you a deck with my new tool.", guesses, False, known, 1)
+    assert not within_guesses("Hello Miguel, I am sending you a message with my new toy.", guesses, False, known, 1)

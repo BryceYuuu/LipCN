@@ -104,8 +104,9 @@ LOCAL_MODEL = "mlx-community/Qwen3-0.6B-4bit"
 
 
 def small_messages(candidates: list[str], context: str, words: "list[str] | None",
-                   similar: "list[str] | None" = None) -> list[dict]:
+                   similar: "list[str] | None" = None, common: "list[str] | None" = None) -> list[dict]:
     u = (f"names: {', '.join(words)}\n" if words else "")
+    u += (f"words they often use: {', '.join(common)}\n" if common else "")
     u += ("they have said before:\n" + "\n".join("- " + s for s in similar) + "\n") if similar else ""
     u += "guesses:\n" + "\n".join("- " + c.lower() for c in candidates)
     msgs = [{"role": "system", "content": SMALL_SYSTEM}]
@@ -128,14 +129,27 @@ def _norm_words(text: str) -> list[str]:
     return re.findall(r"[a-z0-9']+", numbers_to_digits(text.lower()))
 
 
-def within_guesses(out: str, candidates: list[str], strict: bool) -> bool:
+def _edits(a: list[str], b: list[str]) -> int:
+    d = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        prev, d[0] = d[0], i
+        for j, y in enumerate(b, 1):
+            prev, d[j] = d[j], min(d[j] + 1, d[j - 1] + 1, prev + (x != y))
+    return d[-1]
+
+
+def within_guesses(out: str, candidates: list[str], strict: bool, known=None, max_edits: "int | None" = None) -> bool:
     """Small models may only format, and pick words the lip-reader actually proposed.
-    strict: same words as the top guess. loose: every word appears in some guess."""
+    strict: same words as the top guess. loose: every word appears in some guess, or is a word
+    `known(word)` says the user commonly uses; optionally at most `max_edits` word changes."""
     words = _norm_words(out)
+    top = _norm_words(candidates[0])
     if strict:
-        return words == _norm_words(candidates[0])
+        return words == top
     pool = {w for c in candidates for w in _norm_words(c)}
-    return bool(words) and all(w in pool for w in words)
+    if not words or not all(w in pool or (known and known(w)) for w in words):
+        return False
+    return max_edits is None or _edits(words, top) <= max_edits
 
 
 def basic_cleanup(text: str) -> str:
@@ -159,7 +173,11 @@ class Cleaner:
         self._mlx = None
         self._words: list[str] = []
         self._similar: list[str] = []
-        self.strict = os.environ.get("LIPFLOW_LOCAL_STRICT", "1") == "1"  # measured: loose mode invents words
+        # Measured on real dictations (WER): free edits 31.5%, format-only 19.0%, one edit using only
+        # the guesses' words or words you commonly use, with those words in the prompt: 17.9%.
+        self.strict = os.environ.get("LIPFLOW_LOCAL_STRICT", "0") == "1"
+        self.max_edits: "int | None" = 1
+        self.prompt_common = True
         from .personal import Personal
         self.personal = Personal()
         if self.backend == "local":
@@ -249,13 +267,15 @@ class Cleaner:
         if self._mlx is None:
             self.warmup()
         model, tok = self._mlx
-        prompt = tok.apply_chat_template(small_messages(candidates, context, self._words, self._similar), add_generation_prompt=True,
+        common = self.personal.common_words() if (self.prompt_common and self.personal) else None
+        prompt = tok.apply_chat_template(small_messages(candidates, context, self._words, self._similar, common), add_generation_prompt=True,
                                          tokenize=False, enable_thinking=False)
         out = generate(model, tok, prompt=prompt, max_tokens=160, verbose=False)
         out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().split("\n")[0].strip()
         # a tiny model that invents words is worse than no model (measured on real dictations),
         # so it may only format and choose among the lip-reader's own words
-        if not out or out.isupper() or not within_guesses(out, candidates, self.strict):
+        known = self.personal.knows if self.personal else None
+        if not out or out.isupper() or not within_guesses(out, candidates, self.strict, known, self.max_edits):
             return None
         return fix_case(out)
 
