@@ -97,7 +97,7 @@ def build(dest_dir: str) -> str:
         f.write(f"""#!/bin/bash
 # Lipflow launcher: runs the checkout at {ROOT}
 cd "{ROOT}" || exit 1
-export PYTHONUNBUFFERED=1
+export PYTHONUNBUFFERED=1 LIPFLOW_APP=1
 exec "{ROOT}/.venv/bin/python" -m lipflow "$@" >> "{log}" 2>&1
 """)
     os.chmod(launcher, 0o755)

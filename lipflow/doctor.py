@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 
 from .vsr import MODELS
+from .paths import WHO
 
 
 def doctor() -> int:
@@ -24,15 +25,15 @@ def doctor() -> int:
 
     import Quartz
     line(Quartz.CGPreflightListenEventAccess(), "Input Monitoring (for the push-to-talk key)",
-         "System Settings → Privacy & Security → Input Monitoring → enable your terminal, then restart it")
+         f"System Settings → Privacy & Security → Input Monitoring → enable {WHO}, then restart it")
     line(Quartz.CGPreflightPostEventAccess(), "Accessibility (to paste at your cursor)",
-         "System Settings → Privacy & Security → Accessibility → enable your terminal")
+         f"System Settings → Privacy & Security → Accessibility → enable {WHO}")
 
     from AVFoundation import AVCaptureDevice, AVMediaTypeVideo
     status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo)
     names = {0: "not asked yet (you'll be prompted on first use)", 1: "restricted", 2: "denied", 3: "granted"}
     line(status in (0, 3), f"Camera: {names.get(status, status)}",
-         "System Settings → Privacy & Security → Camera → enable your terminal")
+         f"System Settings → Privacy & Security → Camera → enable {WHO}")
 
     from .cleanup import Cleaner
     c = Cleaner()

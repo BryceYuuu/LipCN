@@ -8,3 +8,6 @@ HOME = os.environ.get("LIPFLOW_HOME") or os.path.expanduser("~/Library/Applicati
 PERSONAL_MODELS = os.path.join(HOME, "models")
 PERSONAL_VSR = os.path.join(PERSONAL_MODELS, "vsr_face.pth")
 PERSONAL_LM = os.path.join(PERSONAL_MODELS, "lm_phrasing.pth")
+
+# The app bundle's launcher sets LIPFLOW_APP=1: permissions then belong to "Lipflow", not the terminal.
+WHO = "Lipflow" if os.environ.get("LIPFLOW_APP") else "your terminal"

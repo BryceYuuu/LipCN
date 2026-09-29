@@ -28,6 +28,7 @@ from .paste import copy_text, paste_text
 from .vsr import LipReader
 
 from .paths import HOME
+from .paths import WHO
 
 HISTORY = os.path.join(HOME, "history.jsonl")
 SETTINGS = os.path.join(HOME, "settings.json")
@@ -102,10 +103,10 @@ class Lipflow(NSObject):
         except PermissionError as e:
             print(f"\n[lipflow] {e}\n")
             Quartz.CGRequestListenEventAccess()
-            self.hud.show("error", "Needs Input Monitoring", "Allow your terminal, then restart lipflow")
+            self.hud.show("error", "Needs Input Monitoring", f"Allow {WHO}, then restart lipflow")
         if self.opts.paste and not Quartz.CGPreflightPostEventAccess():
             Quartz.CGRequestPostEventAccess()
-            print("[lipflow] Allow your terminal under Privacy & Security → Accessibility so Lipflow can paste.")
+            print(f"[lipflow] Allow {WHO} under Privacy & Security → Accessibility so Lipflow can paste.")
         self._request_camera()
         self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
         threading.Thread(target=self._worker, name="lipflow-model", daemon=True).start()
@@ -119,8 +120,8 @@ class Lipflow(NSObject):
             AVCaptureDevice.requestAccessForMediaType_completionHandler_(
                 AVMediaTypeVideo, lambda granted: print(f"[lipflow] camera access {'granted' if granted else 'denied'}"))
         elif status in (1, 2):
-            print("[lipflow] camera access is denied: System Settings → Privacy & Security → Camera → enable your terminal")
-            self.hud.show("error", "No camera access", "Enable your terminal in Settings → Privacy → Camera", 6.0)
+            print(f"[lipflow] camera access is denied: System Settings → Privacy & Security → Camera → enable {WHO}")
+            self.hud.show("error", "No camera access", f"Enable {WHO} in Settings → Privacy → Camera", 6.0)
 
     @objc.python_method
     def _build_menu(self):

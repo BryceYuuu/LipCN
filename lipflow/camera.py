@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from .face import FaceObs, FaceTracker
+from .paths import WHO
 
 
 @dataclass
@@ -145,7 +146,7 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
         if not cap.isOpened():
-            raise RuntimeError("Could not open the camera. Allow your terminal in "
+            raise RuntimeError(f"Could not open the camera. Allow {WHO} in "
                                "Settings → Privacy & Security → Camera")
         return cap
 

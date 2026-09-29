@@ -4,13 +4,14 @@ Hold the key to dictate, release to type. Double-tap it to start hands-free mode
 again to stop. Esc cancels the current recording.
 
 Needs "Input Monitoring" (and for pasting, "Accessibility") permission for whatever app
-launched lipflow — usually your terminal.
+launched lipflow: Lipflow.app, or your terminal.
 """
 from __future__ import annotations
 
 import time
 
 import Quartz
+from .paths import WHO
 
 KEYS = {
     # name: (keycode, device-specific modifier mask)
@@ -45,7 +46,7 @@ class PushToTalk:
             mask, self._callback, None)
         if self._tap is None:
             raise PermissionError(
-                "Couldn't listen for the hotkey. Allow your terminal in System Settings → Privacy & Security → "
+                f"Couldn't listen for the hotkey. Allow {WHO} in System Settings → Privacy & Security → "
                 "Input Monitoring (and Accessibility), then restart it.")
         src = Quartz.CFMachPortCreateRunLoopSource(None, self._tap, 0)
         Quartz.CFRunLoopAddSource(Quartz.CFRunLoopGetMain(), src, Quartz.kCFRunLoopCommonModes)
