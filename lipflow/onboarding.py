@@ -35,38 +35,47 @@ N_SENTENCES = 24
 N_HELD_OUT = 6
 WW, WH = 620, 600
 
-FALLBACK = [
-    "Can you send me the file when you get a chance",
-    "I will be a few minutes late to the meeting",
-    "Let me know if you have any questions",
-    "Thanks for the update this looks great",
-    "What time works best for you tomorrow",
-    "I think we should ship this next week",
-    "Can we move the call to the afternoon",
-    "Sounds good I will take a look tonight",
-    "Please review the design before Friday",
-    "I am heading out now talk to you later",
-    "Do you want to grab lunch today",
-    "The new version is much faster than before",
-    "I just pushed a fix for that bug",
-    "Could you share the notes from the call",
-    "Let's catch up after the demo",
-    "I really like where this is going",
-    "Can you remind me what we decided",
-    "I will send the invite in a minute",
-    "This should be ready by the end of the day",
-    "Happy to help with that anytime",
-    "We need to talk about the budget",
-    "Please add me to the thread",
-    "I am not sure that is the right approach",
-    "Let me check and get back to you",
-    "Great job on the presentation today",
-    "Where should we meet on Monday",
+# Harvard sentences (IEEE 1969 "Recommended Practice for Speech Quality Measurements", lists 1-6):
+# short, phonetically balanced sentences, so practice covers every lip shape evenly. Used when there's
+# no Wispr Flow history to practice your own sentences from.
+HARVARD = [
+    "The birch canoe slid on the smooth planks", "Glue the sheet to the dark blue background",
+    "It's easy to tell the depth of a well", "These days a chicken leg is a rare dish",
+    "Rice is often served in round bowls", "The juice of lemons makes fine punch",
+    "The box was thrown beside the parked truck", "The hogs were fed chopped corn and garbage",
+    "Four hours of steady work faced us", "A large size in stockings is hard to sell",
+    "The boy was there when the sun rose", "A rod is used to catch pink salmon",
+    "The source of the huge river is the clear spring", "Kick the ball straight and follow through",
+    "Help the woman get back to her feet", "A pot of tea helps to pass the evening",
+    "Smoky fires lack flame and heat", "The soft cushion broke the man's fall",
+    "The salt breeze came across from the sea", "The girl at the booth sold fifty bonds",
+    "The small pup gnawed a hole in the sock", "The fish twisted and turned on the bent hook",
+    "Press the pants and sew a button on the vest", "The swan dive was far short of perfect",
+    "The beauty of the view stunned the young boy", "Two blue fish swam in the tank",
+    "Her purse was full of useless trash", "The colt reared and threw the tall rider",
+    "It snowed rained and hailed the same morning", "Read verse out loud for pleasure",
+    "Hoist the load to your left shoulder", "Take the winding path to reach the lake",
+    "Note closely the size of the gas tank", "Wipe the grease off his dirty face",
+    "Mend the coat before you go out", "The wrist was badly strained and hung limp",
+    "The stray cat gave birth to kittens", "The young girl gave no clear response",
+    "The meal was cooked before the bell rang", "What joy there is in living",
+    "A king ruled the state in the early days", "The ship was torn apart on the sharp reef",
+    "Sickness kept him home the third week", "The wide road shimmered in the hot sun",
+    "The lazy cow lay in the cool grass", "Lift the square stone over the fence",
+    "The rope will bind the seven books at once", "Hop over the fence and plunge in",
+    "The friendly gang left the drug store", "Mesh wire keeps chicks inside",
+    "The frosty air passed through the coat", "The crooked maze failed to fool the mouse",
+    "Adding fast leads to wrong sums", "The show was a flop from the very start",
+    "A saw is a tool used for making boards", "The wagon moved on well oiled wheels",
+    "March the soldiers past the next hill", "A cup of sugar makes sweet fudge",
+    "Place a rosebush near the porch steps", "Both lost their lives in the raging storm",
 ]
 
 
 def practice_sentences(n: int = N_SENTENCES) -> list[str]:
-    """Prefer your own everyday sentences (from the Wispr import): 5–12 words, no digits."""
+    """Half your own everyday sentences (from an imported Wispr Flow history: 5–12 words, no digits)
+    for your real vocabulary, half Harvard sentences for even coverage of lip shapes; all Harvard
+    if there's no history. Shuffled together."""
     from .personal import PHRASES
     mine = []
     if os.path.exists(PHRASES):
@@ -76,10 +85,11 @@ def practice_sentences(n: int = N_SENTENCES) -> list[str]:
                 if 5 <= len(w) <= 12 and not re.search(r"\d|http|@|/", s):
                     mine.append(s.rstrip(".!?,"))
     random.shuffle(mine)
-    out = list(dict.fromkeys(mine))[:n]
-    pool = [s for s in FALLBACK if s not in out]
-    random.shuffle(pool)
-    return (out + pool)[:n]
+    own = list(dict.fromkeys(mine))[:n // 2]
+    harvard = random.sample(HARVARD, n - len(own))
+    out = own + harvard
+    random.shuffle(out)
+    return out
 
 
 def saved_clips() -> list[dict]:

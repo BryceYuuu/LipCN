@@ -44,7 +44,10 @@ def _targets(reader: LipReader, text: str) -> list[int]:
     from .train_lm import Tok
     if not hasattr(reader, "_tok"):
         reader._tok = Tok(reader.token_list)
-    return reader._tok(text.upper())
+    # Letters and apostrophes only, like the model's training text: punctuation would become <unk>
+    import re
+    clean = " ".join(re.sub(r"[^A-Za-z' ]+", " ", text).upper().split())
+    return reader._tok(clean)
 
 
 def clip_loss(reader: LipReader, x: torch.Tensor, ys: list[int]) -> torch.Tensor:
