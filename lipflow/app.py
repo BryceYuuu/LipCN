@@ -23,8 +23,7 @@ from .cleanup import Cleaner
 from .face import mouth_rois
 from .hotkey import KEYS, PushToTalk
 from .hud import HUD
-from .paste import backspace, copy_text, paste_text, type_text
-from .stream import Broadcaster, serve
+from .paste import copy_text, paste_text
 from .vsr import LipReader
 
 HISTORY = os.path.expanduser("~/Library/Application Support/Lipflow/history.jsonl")
@@ -43,8 +42,6 @@ class Options:
     camera: int = 0
     paste: bool = True
     live_preview: bool = True
-    live_type: bool = False    # type stable words into the focused app while you talk
-    port: int = 8765           # SSE stream of partial/final text; 0 disables
 
 
 def ui(fn, *args, **kw):
@@ -69,9 +66,6 @@ class Lipflow(NSObject):
         self.pending_stop = None
         self.loading = True
         self.camera = Camera(opts.camera, on_frame=self.onFrame)
-        self.bus = Broadcaster()
-        self.live_typed = ""      # what live typing has put in the focused app this dictation
-        self.prev_partial: list[str] = []
         return self
 
     # -- setup ---------------------------------------------------------------------
@@ -90,12 +84,6 @@ class Lipflow(NSObject):
             Quartz.CGRequestPostEventAccess()
             print("[lipflow] Allow your terminal under Privacy & Security → Accessibility so Lipflow can paste.")
         self._request_camera()
-        if self.opts.port:
-            try:
-                serve(self.bus, self.opts.port)
-                print(f"[lipflow] live stream: http://127.0.0.1:{self.opts.port}/  (SSE at /events)")
-            except OSError as e:
-                print(f"[lipflow] couldn't start the live stream on port {self.opts.port}: {e}")
         self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
         threading.Thread(target=self._worker, name="lipflow-model", daemon=True).start()
         self.jobs.put(("load",))
@@ -120,10 +108,6 @@ class Lipflow(NSObject):
         key_name = self.opts.key.replace("_", " ").title()
         self._item(menu, f"Hold {key_name} to dictate · double-tap for hands-free", None)
         self._item(menu, f"Cleanup: {self.cleaner.describe()}", None)
-        self.live_item = self._item(menu, "Type while I talk (live)", "toggleLive:")
-        self.live_item.setState_(1 if self.opts.live_type else 0)
-        if self.opts.port:
-            self._item(menu, "Open live stream page", "openStream:")
         menu.addItem_(NSMenuItem.separatorItem())
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:")
         self._item(menu, "Open history", "openHistory:")
@@ -152,13 +136,6 @@ class Lipflow(NSObject):
         open(HISTORY, "a").close()
         os.system(f'open -t "{HISTORY}"')
 
-    def toggleLive_(self, sender):
-        self.opts.live_type = not self.opts.live_type
-        sender.setState_(1 if self.opts.live_type else 0)
-
-    def openStream_(self, sender):
-        os.system(f"open http://127.0.0.1:{self.opts.port}/")
-
     def openWords_(self, sender):
         from . import vocab
         vocab.load()
@@ -182,8 +159,6 @@ class Lipflow(NSObject):
             return
         self.session += 1
         self.hands_free = hands_free
-        self.live_typed, self.prev_partial = "", []
-        self.bus.publish("start", id=self.session)
         rec = self.camera.start_recording()
         title = "Hands-free · tap to finish" if hands_free else "Listening"
         self.hud.show("listening", title, "" if self.camera.ready.is_set() else "Starting camera…")
@@ -211,10 +186,6 @@ class Lipflow(NSObject):
     @objc.python_method
     def on_cancel(self, silent: bool = False):
         self.pending_stop = None
-        self.bus.publish("cancel", id=self.session)
-        if self.live_typed:  # take back what live typing already put in the app
-            backspace(len(self.live_typed))
-            self.live_typed = ""
         self.session += 1
         self.hands_free = False
         self.camera.stop_recording()
@@ -310,30 +281,6 @@ class Lipflow(NSObject):
         text = self.reader.greedy(self.reader.encode(rois))
         if self.session == session and text:
             ui(self.hud.set_text, text.lower())
-            self.bus.publish("partial", id=session, text=text.lower())
-            if self.opts.live_type and self.opts.paste:
-                ui(self._live_type, session, text.lower().split())
-
-    @objc.python_method
-    def _live_type(self, session: int, words: list[str]):
-        """Type words that two consecutive live reads agree on, never the newest word."""
-        if self.session != session:
-            return
-        prev, self.prev_partial = self.prev_partial, words
-        stable = []
-        for a, b in zip(prev, words[:-1]):
-            if a != b:
-                break
-            stable.append(a)
-        want = " ".join(stable)
-        if stable and want.startswith(self.live_typed) and len(want) > len(self.live_typed):
-            new = want[len(self.live_typed):]
-            if self.last_paste_at and not self.live_typed and time.time() - self.last_paste_at < JOIN_WINDOW:
-                new = " " + new
-                want = " " + want
-            type_text(new)
-            self.live_typed += new
-
     @objc.python_method
     def _final(self, rec: Recording):
         t0 = time.time()
@@ -345,7 +292,6 @@ class Lipflow(NSObject):
         elif np.std([m for m in rec.mouth_open if m > 0] or [0]) < 0.012:
             problem = ("No lip movement", "Mouth the words clearly — no sound needed")
         if problem:
-            ui(self._drop_live)
             print(f"[lipflow] skipped {rec.duration:.1f}s clip ({len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
             ui(self.hud.show, "error", problem[0], problem[1], 2.2)
@@ -356,7 +302,6 @@ class Lipflow(NSObject):
         candidates = self.reader.beam_search(enc, nbest=3)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
-            ui(self._drop_live)
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
         ui(self.hud.set_text, candidates[0].lower())
@@ -365,7 +310,6 @@ class Lipflow(NSObject):
         print(f"[lipflow] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
               f"          → typed: {text!r}  (encode {t_enc:.2f}s, beam {t_beam:.2f}s, total {t_all:.2f}s)")
         if not text:
-            ui(self._drop_live)
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
         out = text
@@ -375,31 +319,11 @@ class Lipflow(NSObject):
         self.last_paste_at = time.time()
         self.context.append(text)
         self._log(rec, candidates, text, t_all)
-        self.bus.publish("final", id=self.session, text=text, raw=candidates, latency=round(t_all, 2))
         if self.opts.paste:
-            ui(self._insert_final, out)
+            ui(paste_text, out)
         else:
             ui(copy_text, text)
         ui(self.hud.show, "done", "Typed" if self.opts.paste else "Copied", text, 2.4)
-
-    @objc.python_method
-    def _drop_live(self):
-        if self.live_typed:
-            backspace(len(self.live_typed))
-            self.live_typed = ""
-
-    @objc.python_method
-    def _insert_final(self, out: str):
-        typed, self.live_typed = self.live_typed, ""
-        if typed:
-            # swap the rough live words for the cleaned sentence, keeping any shared start
-            common = 0
-            while common < min(len(typed), len(out)) and typed[common] == out[common]:
-                common += 1
-            backspace(len(typed) - common)
-            type_text(out[common:])
-        else:
-            paste_text(out)
 
     @objc.python_method
     def _log(self, rec, candidates, text, secs):

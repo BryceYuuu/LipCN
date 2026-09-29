@@ -25,8 +25,6 @@ def main(argv=None):
     r.add_argument("--camera", default="0", help="camera index, or a video file to use instead")
     r.add_argument("--copy-only", action="store_true", help="copy to the clipboard instead of pasting")
     r.add_argument("--no-preview", action="store_true", help="don't show live words while you talk")
-    r.add_argument("--live-type", action="store_true", help="type words into the app while you talk")
-    r.add_argument("--port", type=int, default=8765, help="live SSE stream port (0 = off)")
 
     f = sub.add_parser("file", help="lip-read a video file")
     f.add_argument("video")
@@ -58,8 +56,7 @@ def main(argv=None):
     else:
         from .app import Options, run
         run(Options(key=args.key, beam=args.beam, backend=args.cleanup, camera=int(args.camera) if args.camera.isdigit() else args.camera,
-                    paste=not args.copy_only, live_preview=not args.no_preview,
-                    live_type=args.live_type, port=args.port))
+                    paste=not args.copy_only, live_preview=not args.no_preview))
 
 
 if __name__ == "__main__":

@@ -48,26 +48,3 @@ def copy_text(text: str):
     pb.clearContents()
     pb.setString_forType_(text, NSPasteboardTypeString)
 
-
-_BACKSPACE = 51
-
-
-def type_text(text: str):
-    """Type text as keystrokes (no clipboard): used for live streaming, where pasting on every
-    word would keep clobbering the clipboard."""
-    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-    for i in range(0, len(text), 16):  # the event API takes up to ~20 UTF-16 units at a time
-        chunk = text[i:i + 16]
-        for down in (True, False):
-            ev = Quartz.CGEventCreateKeyboardEvent(src, 0, down)
-            Quartz.CGEventKeyboardSetUnicodeString(ev, len(chunk), chunk)
-            _post(ev)
-        time.sleep(0.004)
-
-
-def backspace(n: int):
-    src = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStateHIDSystemState)
-    for _ in range(n):
-        for down in (True, False):
-            _post(Quartz.CGEventCreateKeyboardEvent(src, _BACKSPACE, down))
-        time.sleep(0.002)

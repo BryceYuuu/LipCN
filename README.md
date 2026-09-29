@@ -61,31 +61,15 @@ the LLM is told about them.
 | Double-tap **Right Option** … tap again | hands-free (up to 60 s) |
 | **Esc** while listening | cancel |
 | 👄 menu → Copy last dictation / Open history | get text back |
-| 👄 menu → **Type while I talk (live)** (or `--live-type`) | words appear in the app as you mouth them, then get swapped for the cleaned sentence when you let go |
 
 Lipflow keeps filming for 0.4 s after you release the key, because the model needs the frames
 after the last word to read it.
-
-### Live stream
-
-Everything Lipflow reads is streamed as Server-Sent Events on `http://127.0.0.1:8765/events`
-(local only): `start`, `partial` (the live guess, about twice a second), `final` (cleaned text,
-raw top-3 guesses, latency) and `cancel`. Open `http://127.0.0.1:8765/` for a live captions page,
-or `curl -N http://127.0.0.1:8765/events`. Change the port with `--port`, or turn it off with `--port 0`.
-
-While you talk, a pill at the bottom of the screen shows your mouth, a lip-motion meter and a live
-guess of the words. When you let go it types the cleaned-up sentence.
-
-Tips: face the camera and keep your mouth well lit. Mouth the words clearly at normal speed and
-say whole phrases, not single words. The model was trained on TED-style sentences and uses context.
 
 Options: `uv run lipflow --help`
 
 ```
 --key {right_option,left_option,right_command,right_control,fn}
 --cleanup {auto,claude,local,ollama,basic}
---live-type       type words into the app while you talk
---port N          live SSE stream port (0 = off)
 --beam N          beam size (default 10)
 --copy-only       copy to the clipboard instead of pasting
 --camera N|FILE   camera index, or a video file to stand in for the webcam
