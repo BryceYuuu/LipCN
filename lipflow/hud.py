@@ -1,7 +1,8 @@
-"""The floating pill at the bottom of the screen, à la Wispr Flow.
+"""The floating pill at the bottom of the screen, plus the live mouth video above it.
 
-States: listening (mouth preview + lip-motion bars + live words), reading (spinner),
-done (the text that was typed, fades out), error/hint (fades out).
+States: listening (mouth video + lip-motion meter + live words), reading (animated
+waveform), done (the text that was pasted, fades out), error/hint (fades out).
+Native look: frosted HUD material, SF Symbols, dark appearance.
 All methods must be called on the main thread (use AppHelper.callAfter).
 """
 from __future__ import annotations
@@ -13,68 +14,138 @@ import numpy as np
 import objc
 import Quartz
 from AppKit import (
-    NSBackingStoreBuffered, NSBezierPath, NSBitmapImageRep, NSColor, NSFont, NSImage, NSImageView,
-    NSMakeRect, NSPanel, NSScreen, NSTextField, NSView, NSWindowCollectionBehaviorCanJoinAllSpaces,
-    NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowStyleMaskBorderless,
-    NSWindowStyleMaskNonactivatingPanel, NSLineBreakByTruncatingHead, NSStatusWindowLevel,
-    NSAnimationContext, NSTimer, NSImageScaleProportionallyUpOrDown, NSTextAlignmentCenter, NSLineBreakByTruncatingTail,
+    NSAnimationContext, NSAppearance, NSBackingStoreBuffered, NSBezierPath, NSBitmapImageRep, NSColor, NSFont,
+    NSFontWeightMedium, NSFontWeightSemibold, NSImage, NSImageScaleProportionallyUpOrDown,
+    NSImageSymbolConfiguration, NSImageView, NSLineBreakByTruncatingHead, NSLineBreakByTruncatingTail, NSMakeRect,
+    NSPanel, NSScreen, NSStatusWindowLevel, NSTextField, NSTimer, NSView, NSVisualEffectView,
+    NSWindowCollectionBehaviorCanJoinAllSpaces, NSWindowCollectionBehaviorFullScreenAuxiliary,
+    NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel,
 )
-from Foundation import NSObject
+from Foundation import NSData, NSObject
 
-W, H = 440, 64
-VW, VH = 240, 150  # live mouth video above the pill
-THUMB = 48
-ACCENT = (0.98, 0.36, 0.45)  # lip pink
+W, H = 420, 60
+VW, VH = 232, 144
+BARS = 16
+ACCENT = (1.0, 0.33, 0.45)   # lip pink
+GREEN = (0.30, 0.85, 0.55)
+AMBER = (1.0, 0.72, 0.25)
+HUD_MATERIAL = 13            # NSVisualEffectMaterialHUDWindow
+BEHIND_WINDOW, ACTIVE = 0, 1
+
+STATES = {
+    #           symbol                          tint    title colour
+    "listening": ("mouth.fill",                  ACCENT),
+    "reading":   ("waveform",                    (1, 1, 1)),
+    "done":      ("checkmark",                   GREEN),
+    "error":     ("exclamationmark.triangle.fill", AMBER),
+}
 
 
-def _rgb(r, g, b, a=1.0):
-    return NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, a)
+def _rgb(c, a=1.0):
+    return NSColor.colorWithSRGBRed_green_blue_alpha_(c[0], c[1], c[2], a)
+
+
+def _cg(c, a=1.0):
+    return Quartz.CGColorCreateSRGB(c[0], c[1], c[2], a)
+
+
+def symbol(name: str, size: float = 15, weight=NSFontWeightSemibold) -> NSImage:
+    img = NSImage.imageWithSystemSymbolName_accessibilityDescription_(name, None)
+    cfg = NSImageSymbolConfiguration.configurationWithPointSize_weight_(size, weight)
+    return img.imageWithSymbolConfiguration_(cfg)
 
 
 def _nsimage(bgr: np.ndarray) -> NSImage:
-    ok, buf = cv2.imencode(".png", bgr)
-    from Foundation import NSData
-    data = NSData.dataWithBytes_length_(buf.tobytes(), len(buf))
-    rep = NSBitmapImageRep.imageRepWithData_(data)
+    ok, buf = cv2.imencode(".bmp", bgr)  # BMP: no compression cost at 30 fps
+    rep = NSBitmapImageRep.imageRepWithData_(NSData.dataWithBytes_length_(buf.tobytes(), len(buf)))
     img = NSImage.alloc().initWithSize_(rep.size())
     img.addRepresentation_(rep)
     return img
 
 
-class PillView(NSView):
+def _panel(frame) -> NSPanel:
+    p = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+        frame, NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False)
+    p.setLevel_(NSStatusWindowLevel)
+    p.setOpaque_(False)
+    p.setBackgroundColor_(NSColor.clearColor())
+    p.setHasShadow_(True)
+    p.setIgnoresMouseEvents_(True)
+    p.setHidesOnDeactivate_(False)
+    p.setAppearance_(NSAppearance.appearanceNamed_("NSAppearanceNameDarkAqua"))
+    p.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary)
+    return p
+
+
+def _glass(frame, radius: float, tint: float = 0.22):
+    """(outer view, content view). Liquid Glass (NSGlassEffectView, macOS 26+) when available,
+    otherwise the older frosted HUD material. `tint` darkens the glass a touch so white text stays
+    legible over bright windows without losing the refraction."""
+    content = NSView.alloc().initWithFrame_(NSMakeRect(0, 0, frame.size.width, frame.size.height))
+    try:
+        Glass = objc.lookUpClass("NSGlassEffectView")
+    except objc.nosuchclass_error:
+        Glass = None
+    if Glass is not None:
+        g = Glass.alloc().initWithFrame_(frame)
+        g.setStyle_(0)  # NSGlassEffectViewStyleRegular
+        g.setCornerRadius_(radius)
+        g.setTintColor_(_rgb((0.05, 0.05, 0.08), tint))
+        g.setContentView_(content)
+        return g, content
+    v = NSVisualEffectView.alloc().initWithFrame_(frame)
+    v.setMaterial_(HUD_MATERIAL)
+    v.setBlendingMode_(BEHIND_WINDOW)
+    v.setState_(ACTIVE)
+    v.setWantsLayer_(True)
+    v.layer().setCornerRadius_(radius)
+    v.layer().setMasksToBounds_(True)
+    content.setWantsLayer_(True)
+    content.layer().setBackgroundColor_(_cg((0.04, 0.04, 0.06), 0.55))
+    v.addSubview_(content)
+    return v, content
+
+
+def _label(parent, frame, size, weight, color):
+    t = NSTextField.alloc().initWithFrame_(frame)
+    t.setBezeled_(False)
+    t.setDrawsBackground_(False)
+    t.setEditable_(False)
+    t.setSelectable_(False)
+    t.setTextColor_(color)
+    t.setFont_(NSFont.systemFontOfSize_weight_(size, weight))
+    parent.addSubview_(t)
+    return t
+
+
+class MeterView(NSView):
+    """Lip-motion meter while listening; a travelling wave while reading."""
+
     def initWithFrame_(self, frame):
-        self = objc.super(PillView, self).initWithFrame_(frame)
+        self = objc.super(MeterView, self).initWithFrame_(frame)
         if self is None:
             return None
-        self.levels = [0.0] * 14
+        self.levels = [0.0] * BARS
         self.mode = "idle"
         self.phase = 0.0
         return self
 
-    def isFlipped(self):
-        return False
-
     def drawRect_(self, rect):
-        b = self.bounds()
-        path = NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(b, H / 2, H / 2)
-        _rgb(0.07, 0.07, 0.09, 0.92).setFill()
-        path.fill()
-        _rgb(1, 1, 1, 0.10).setStroke()
-        path.setLineWidth_(1.0)
-        path.stroke()
         if self.mode not in ("listening", "reading"):
             return
-        # Lip-motion bars on the right edge
-        x0 = b.size.width - 24 - len(self.levels) * 5
+        b = self.bounds()
+        step = b.size.width / BARS
         mid = b.size.height / 2
         for i, lv in enumerate(self.levels):
             if self.mode == "reading":
-                lv = 0.25 + 0.25 * math.sin(self.phase * 2.2 - i * 0.55)
-            h = 4 + lv * 30
-            color = _rgb(*ACCENT, 0.95) if self.mode == "listening" else _rgb(1, 1, 1, 0.55)
+                lv = 0.22 + 0.22 * math.sin(self.phase * 2.0 - i * 0.5)
+                color = _rgb((1, 1, 1), 0.55 + 0.35 * max(0.0, math.sin(self.phase * 2.0 - i * 0.5)))
+            else:
+                color = _rgb(ACCENT, 0.45 + 0.55 * lv)
+            h = 3 + lv * (b.size.height - 6)
             color.setFill()
             NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
-                NSMakeRect(x0 + i * 5, mid - h / 2, 3, h), 1.5, 1.5).fill()
+                NSMakeRect(i * step + (step - 2.5) / 2, mid - h / 2, 2.5, h), 1.25, 1.25).fill()
 
 
 class HUD(NSObject):
@@ -85,113 +156,90 @@ class HUD(NSObject):
         screen = NSScreen.mainScreen().visibleFrame()
         x = screen.origin.x + (screen.size.width - W) / 2
         y = screen.origin.y + 28
-        self.panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x, y, W, H), NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel,
-            NSBackingStoreBuffered, False)
-        p = self.panel
-        p.setLevel_(NSStatusWindowLevel)
-        p.setOpaque_(False)
-        p.setBackgroundColor_(NSColor.clearColor())
-        p.setHasShadow_(True)
-        p.setIgnoresMouseEvents_(True)
-        p.setHidesOnDeactivate_(False)
-        p.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary)
 
-        # Live mouth video, floating just above the pill
-        self.video_panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(x + (W - VW) / 2, y + H + 10, VW, VH),
-            NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False)
-        vp = self.video_panel
-        vp.setLevel_(NSStatusWindowLevel)
-        vp.setOpaque_(False)
-        vp.setBackgroundColor_(NSColor.clearColor())
-        vp.setHasShadow_(True)
-        vp.setIgnoresMouseEvents_(True)
-        vp.setHidesOnDeactivate_(False)
-        vp.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorFullScreenAuxiliary)
-        self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, VW, VH))
+        # -- pill --------------------------------------------------------------------
+        self.panel = _panel(NSMakeRect(x, y, W, H))
+        outer, self.glass = _glass(NSMakeRect(0, 0, W, H), H / 2)
+        self.panel.setContentView_(outer)
+
+        badge = 36
+        self.badge = NSView.alloc().initWithFrame_(NSMakeRect(12, (H - badge) / 2, badge, badge))
+        self.badge.setWantsLayer_(True)
+        self.badge.layer().setCornerRadius_(badge / 2)
+        self.glass.addSubview_(self.badge)
+        self.icon = NSImageView.alloc().initWithFrame_(NSMakeRect(0, 0, badge, badge))
+        self.icon.setImageScaling_(0)  # NSImageScaleNone: keep the symbol's point size
+        self.badge.addSubview_(self.icon)
+
+        tx = 12 + badge + 12
+        self.meter = MeterView.alloc().initWithFrame_(NSMakeRect(W - 18 - BARS * 5, (H - 28) / 2, BARS * 5, 28))
+        self.glass.addSubview_(self.meter)
+        self.title = _label(self.glass, NSMakeRect(tx, H / 2 + 2, W - tx - 20, 15), 10.5, NSFontWeightSemibold,
+                            _rgb((1, 1, 1), 0.5))
+        self.body = _label(self.glass, NSMakeRect(tx, H / 2 - 19, W - tx - 20, 19), 14, NSFontWeightMedium,
+                           _rgb((1, 1, 1), 0.95))
+
+        # -- mouth video ---------------------------------------------------------------
+        self.video_panel = _panel(NSMakeRect(x + (W - VW) / 2, y + H + 10, VW, VH))
+        vouter, vglass = _glass(NSMakeRect(0, 0, VW, VH), 22, tint=0.1)
+        self.video_panel.setContentView_(vouter)
+        self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(6, 6, VW - 12, VH - 12))
         self.video.setImageScaling_(NSImageScaleProportionallyUpOrDown)
         self.video.setWantsLayer_(True)
-        self.video.layer().setCornerRadius_(18)
+        self.video.layer().setCornerRadius_(16)
         self.video.layer().setMasksToBounds_(True)
-        self.video.layer().setBorderWidth_(1.0)
-        self.video.layer().setBorderColor_(Quartz.CGColorCreateSRGB(1, 1, 1, 0.15))
-        self.video.layer().setBackgroundColor_(Quartz.CGColorCreateSRGB(0.07, 0.07, 0.09, 0.92))
-        vp.setContentView_(self.video)
+        self.video.layer().setBorderWidth_(1.5)
+        self.video.layer().setBorderColor_(_cg(ACCENT, 0.75))
+        vglass.addSubview_(self.video)
+        # "REC" tag in the corner
+        tag = NSView.alloc().initWithFrame_(NSMakeRect(14, VH - 32, 44, 18))
+        tag.setWantsLayer_(True)
+        tag.layer().setCornerRadius_(9)
+        tag.layer().setBackgroundColor_(_cg((0, 0, 0), 0.55))
+        vglass.addSubview_(tag)
+        dot = NSView.alloc().initWithFrame_(NSMakeRect(7, 6, 6, 6))
+        dot.setWantsLayer_(True)
+        dot.layer().setCornerRadius_(3)
+        dot.layer().setBackgroundColor_(_cg(ACCENT))
+        tag.addSubview_(dot)
+        self.rec_dot = dot
+        _label(tag, NSMakeRect(15, 1, 28, 14), 9.5, NSFontWeightSemibold, _rgb((1, 1, 1), 0.9)).setStringValue_("REC")
 
-        self.view = PillView.alloc().initWithFrame_(NSMakeRect(0, 0, W, H))
-        p.setContentView_(self.view)
-
-        self.thumb = NSImageView.alloc().initWithFrame_(NSMakeRect(8, (H - THUMB) / 2, THUMB, THUMB))
-        self.thumb.setImageScaling_(NSImageScaleProportionallyUpOrDown)
-        self.thumb.setWantsLayer_(True)
-        self.thumb.layer().setCornerRadius_(THUMB / 2)
-        self.thumb.layer().setMasksToBounds_(True)
-        self.thumb.layer().setBackgroundColor_(Quartz.CGColorCreateSRGB(1, 1, 1, 0.08))
-        self.view.addSubview_(self.thumb)
-
-        self.glyph = NSTextField.alloc().initWithFrame_(NSMakeRect(8, (H - THUMB) / 2 + 11, THUMB, 26))
-        for f in (self.glyph,):
-            f.setBezeled_(False); f.setDrawsBackground_(False); f.setEditable_(False); f.setSelectable_(False)
-            f.setAlignment_(NSTextAlignmentCenter)
-            f.setFont_(NSFont.systemFontOfSize_(20))
-            f.setTextColor_(_rgb(1, 1, 1, 0.9))
-        self.view.addSubview_(self.glyph)
-
-        text_x = 8 + THUMB + 12
-        text_w = W - text_x - 24 - 14 * 5 - 10
-        self.title = self._label(NSMakeRect(text_x, H / 2 + 1, text_w, 18), 11, 0.55, bold=True)
-        self.body = self._label(NSMakeRect(text_x, H / 2 - 21, text_w, 20), 14, 0.95)
-        self.body.cell().setLineBreakMode_(NSLineBreakByTruncatingHead)
         self._hide_timer = None
         self._anim_timer = None
         return self
-
-    @objc.python_method
-    def _label(self, frame, size, alpha, bold=False):
-        t = NSTextField.alloc().initWithFrame_(frame)
-        t.setBezeled_(False)
-        t.setDrawsBackground_(False)
-        t.setEditable_(False)
-        t.setSelectable_(False)
-        t.setTextColor_(_rgb(1, 1, 1, alpha))
-        t.setFont_(NSFont.boldSystemFontOfSize_(size) if bold else NSFont.systemFontOfSize_(size))
-        self.view.addSubview_(t)
-        return t
 
     # -- public (main thread) ------------------------------------------------------
     @objc.python_method
     def show(self, mode: str, title: str, body: str = "", hide_after: float | None = None):
         self._cancel_hide()
-        self.view.mode = mode
+        sym, tint = STATES.get(mode, STATES["reading"])
+        self.icon.setImage_(symbol(sym))
+        self.icon.setContentTintColor_(_rgb(tint))
+        self.badge.layer().setBackgroundColor_(_cg(tint, 0.16))
         self.title.setStringValue_(title.upper())
         self.body.setStringValue_(body)
-        self.body.cell().setLineBreakMode_(NSLineBreakByTruncatingHead if mode in ("listening", "reading")
-                                           else NSLineBreakByTruncatingTail)
-        bars = mode in ("listening", "reading")
-        f = self.body.frame()
-        full = W - f.origin.x - 22
-        self.body.setFrameSize_((full - (14 * 5 + 12 if bars else 0), f.size.height))
-        self.title.setFrameSize_((full, self.title.frame().size.height))
-        self.glyph.setStringValue_({"done": "✓", "error": "!", "reading": "👄", "listening": "●"}.get(mode, ""))
-        self.glyph.setTextColor_(_rgb(0.45, 0.9, 0.6) if mode == "done" else _rgb(*ACCENT) if mode in ("error", "listening")
-                                 else _rgb(1, 1, 1, 0.9))
-        self.thumb.setImage_(None)
+        live = mode in ("listening", "reading")
+        self.body.cell().setLineBreakMode_(NSLineBreakByTruncatingHead if live else NSLineBreakByTruncatingTail)
+        tx = self.body.frame().origin.x
+        width = W - tx - 20 - ((BARS * 5 + 14) if live else 0)
+        self.body.setFrameSize_((width, self.body.frame().size.height))
+        self.meter.mode = mode
+        if mode != "listening":
+            self.meter.levels = [0.0] * BARS
+        self.meter.setNeedsDisplay_(True)
+        if live:
+            self._start_anim()
+        else:
+            self._stop_anim()
+        self.panel.setAlphaValue_(1.0)
+        self.panel.orderFrontRegardless()
         if mode == "listening":
             self.video_panel.setAlphaValue_(1.0)
             self.video_panel.orderFrontRegardless()
         else:
             self.video_panel.orderOut_(None)
             self.video.setImage_(None)
-        if mode != "listening":
-            self.view.levels = [0.0] * len(self.view.levels)
-        if mode == "reading":
-            self._start_anim()
-        else:
-            self._stop_anim()
-        self.view.setNeedsDisplay_(True)
-        self.panel.setAlphaValue_(1.0)
-        self.panel.orderFrontRegardless()
         if hide_after:
             self._hide_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
                 hide_after, self, "fadeOut:", None, False)
@@ -202,12 +250,11 @@ class HUD(NSObject):
 
     @objc.python_method
     def set_frame(self, video_bgr, level: float):
-        if video_bgr is not None and self.view.mode == "listening":
+        if video_bgr is not None and self.meter.mode == "listening":
             self.video.setImage_(_nsimage(video_bgr))
-        lv = self.view.levels
+        lv = self.meter.levels
         lv.pop(0)
         lv.append(float(max(0.0, min(1.0, level))))
-        self.view.setNeedsDisplay_(True)
 
     @objc.python_method
     def hide(self):
@@ -217,24 +264,26 @@ class HUD(NSObject):
         self.video_panel.orderOut_(None)
         self.video.setImage_(None)
 
-    # -- internals -----------------------------------------------------------------
+    # -- timers --------------------------------------------------------------------
     def fadeOut_(self, timer):
         self._hide_timer = None
         NSAnimationContext.beginGrouping()
-        NSAnimationContext.currentContext().setDuration_(0.35)
+        NSAnimationContext.currentContext().setDuration_(0.3)
         self.panel.animator().setAlphaValue_(0.0)
         self.video_panel.animator().setAlphaValue_(0.0)
         NSAnimationContext.endGrouping()
         self._hide_timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            0.4, self, "orderOut:", None, False)
+            0.35, self, "orderOut:", None, False)
 
     def orderOut_(self, timer):
         self._hide_timer = None
         self.hide()
 
     def tick_(self, timer):
-        self.view.phase += 0.25
-        self.view.setNeedsDisplay_(True)
+        self.meter.phase += 0.18
+        self.meter.setNeedsDisplay_(True)
+        # breathe the REC dot
+        self.rec_dot.layer().setOpacity_(0.55 + 0.45 * (0.5 + 0.5 * math.sin(self.meter.phase * 1.4)))
 
     @objc.python_method
     def _start_anim(self):

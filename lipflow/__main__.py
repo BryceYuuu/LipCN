@@ -34,9 +34,11 @@ def main(argv=None):
     f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic", "none"])
 
     sub.add_parser("doctor", help="check permissions, camera and model files")
+    w = sub.add_parser("import-wispr", help="learn your phrasing from your Wispr Flow history (stays local)")
+    w.add_argument("--from-text", help="import a plain-text file of your writing instead (one phrase per line)")
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] not in {"run", "file", "doctor", "-h", "--help"}:
+    if not argv or argv[0] not in {"run", "file", "doctor", "import-wispr", "-h", "--help"}:
         argv.insert(0, "run")
     args = p.parse_args(argv)
     cmd = args.cmd
@@ -50,6 +52,19 @@ def main(argv=None):
             from .cleanup import Cleaner
             c = Cleaner(args.cleanup)
             print(f"text:  {c([raw])}   [{c.describe()}]")
+    elif cmd == "import-wispr":
+        from .personal import PHRASES, import_wispr, save_phrases
+        from .vocab import PATH as WORDS
+        if args.from_text:
+            stats = save_phrases(open(args.from_text).read().splitlines()) | {"source": args.from_text}
+        else:
+            stats = import_wispr()
+        print(f"Imported {stats['phrases']:,} phrases ({stats['words']:,} words) from {stats['source']}")
+        print(f"  saved to {PHRASES}")
+        if stats["new_names"]:
+            print(f"  added {len(stats['new_names'])} names/terms to {WORDS}. Review them: "
+                  "Lipflow menu → Edit custom words")
+        print("Restart Lipflow to use them.")
     elif cmd == "doctor":
         from .doctor import doctor
         sys.exit(doctor())

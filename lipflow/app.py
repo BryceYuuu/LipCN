@@ -22,7 +22,8 @@ from .camera import Camera, Recording, mouth_view
 from .cleanup import Cleaner
 from .face import mouth_rois
 from .hotkey import KEYS, PushToTalk
-from .hud import HUD
+from .hud import HUD, symbol
+from AppKit import NSFontWeightRegular
 from .paste import copy_text, paste_text
 from .vsr import LipReader
 
@@ -102,23 +103,34 @@ class Lipflow(NSObject):
     @objc.python_method
     def _build_menu(self):
         self.status = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
-        self.status.button().setTitle_("👄")
+        self._set_status_icon(False)
         menu = NSMenu.alloc().init()
-        self.state_item = self._item(menu, "Loading model…", None)
+        self.state_item = self._item(menu, "Loading model…", None, icon="hourglass")
         key_name = self.opts.key.replace("_", " ").title()
-        self._item(menu, f"Hold {key_name} to dictate · double-tap for hands-free", None)
-        self._item(menu, f"Cleanup: {self.cleaner.describe()}", None)
+        self._item(menu, f"Hold {key_name} to dictate, double-tap for hands-free", None, icon="keyboard")
+        self._item(menu, f"Cleanup: {self.cleaner.describe()}", None, icon="text.badge.checkmark")
+        n = len(self.cleaner.personal.phrases)
+        self._item(menu, f"Personalised from {n:,} of your phrases" if n else
+                   "Not personalised yet: run lipflow import-wispr", None, icon="person.text.rectangle")
         menu.addItem_(NSMenuItem.separatorItem())
-        self.last_item = self._item(menu, "Copy last dictation", "copyLast:")
-        self._item(menu, "Open history", "openHistory:")
-        self._item(menu, "Edit custom words (names, terms)…", "openWords:")
+        self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
+        self._item(menu, "Open history", "openHistory:", icon="clock.arrow.circlepath")
+        self._item(menu, "Edit custom words…", "openWords:", icon="character.book.closed")
         menu.addItem_(NSMenuItem.separatorItem())
-        self._item(menu, "Quit Lipflow", "quit:", "q")
+        self._item(menu, "Quit Lipflow", "quit:", "q", icon="power")
         self.status.setMenu_(menu)
 
     @objc.python_method
-    def _item(self, menu, title, action, key=""):
+    def _set_status_icon(self, listening: bool):
+        img = symbol("mouth.fill" if listening else "mouth", 15)
+        img.setTemplate_(True)  # follows light/dark menu bar
+        self.status.button().setImage_(img)
+
+    @objc.python_method
+    def _item(self, menu, title, action, key="", icon=None):
         it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, key)
+        if icon:
+            it.setImage_(symbol(icon, 13, NSFontWeightRegular))
         if action:
             it.setTarget_(self)
         else:
@@ -160,6 +172,7 @@ class Lipflow(NSObject):
         self.session += 1
         self.hands_free = hands_free
         rec = self.camera.start_recording()
+        self._set_status_icon(True)
         title = "Hands-free · tap to finish" if hands_free else "Listening"
         self.hud.show("listening", title, "" if self.camera.ready.is_set() else "Starting camera…")
         threading.Thread(target=self._preview_loop, args=(self.session, rec), daemon=True).start()
@@ -171,6 +184,7 @@ class Lipflow(NSObject):
             return
         self.session += 1
         self.pending_stop = self.session
+        self._set_status_icon(False)
         self.hud.show("reading", "Reading your lips", self.hud.body.stringValue())
         AppHelper.callLater(TAIL_SECONDS, self._finish_stop, self.session)
 
@@ -186,6 +200,7 @@ class Lipflow(NSObject):
     @objc.python_method
     def on_cancel(self, silent: bool = False):
         self.pending_stop = None
+        self._set_status_icon(False)
         self.session += 1
         self.hands_free = False
         self.camera.stop_recording()
@@ -262,6 +277,7 @@ class Lipflow(NSObject):
               f"(encoder on {self.reader.enc_device}, cleanup: {self.cleaner.describe()})")
         name = self.opts.key.replace("_", " ").title()
         ui(self.state_item.setTitle_, "Ready")
+        ui(self.state_item.setImage_, symbol("checkmark.circle", 13, NSFontWeightRegular))
         ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
 
     @objc.python_method
@@ -299,7 +315,7 @@ class Lipflow(NSObject):
         rois = self._rois(rec)
         enc = self.reader.encode(rois)
         t_enc = time.time() - t0
-        candidates = self.reader.beam_search(enc, nbest=3)
+        candidates = self.reader.beam_search(enc, nbest=5)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
@@ -323,7 +339,7 @@ class Lipflow(NSObject):
             ui(paste_text, out)
         else:
             ui(copy_text, text)
-        ui(self.hud.show, "done", "Typed" if self.opts.paste else "Copied", text, 2.4)
+        ui(self.hud.show, "done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
 
     @objc.python_method
     def _log(self, rec, candidates, text, secs):

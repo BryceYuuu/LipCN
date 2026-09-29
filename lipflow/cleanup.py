@@ -31,8 +31,12 @@ Rules:
 - If the candidates are gibberish with no plausible reading, output the best candidate in sentence case."""
 
 
-def _user_prompt(candidates: list[str], context: str, words: "list[str] | None" = None) -> str:
+def _user_prompt(candidates: list[str], context: str, words: "list[str] | None" = None,
+                 similar: "list[str] | None" = None) -> str:
     lines = []
+    if similar:
+        lines.append("Things this user has said before (they often reuse phrasing):\n"
+                     + "\n".join(f"- {s}" for s in similar) + "\n")
     if words:
         lines.append("Names and terms the user often says (prefer these when a mis-read looks like one): "
                      + ", ".join(words) + "\n")
@@ -93,12 +97,17 @@ SMALL_SHOTS = [
     ("names: Priya\nguesses:\n- hi pria can we meet at bored thirty\n- hi pre a can we meet at four thirty",
      "Hi Priya, can we meet at 4:30?"),
     ("guesses:\n- i think the bran is ready to ship next week", "I think the plan is ready to ship next week."),
+    ("they have said before:\n- Can you send me the deck before the review?\nguesses:\n- can you tend me the neck before the "
+     "review\n- can you send me the neck before the view", "Can you send me the deck before the review?"),
 ]
 LOCAL_MODEL = "mlx-community/Qwen3-0.6B-4bit"
 
 
-def small_messages(candidates: list[str], context: str, words: "list[str] | None") -> list[dict]:
-    u = (f"names: {', '.join(words)}\n" if words else "") + "guesses:\n" + "\n".join("- " + c.lower() for c in candidates)
+def small_messages(candidates: list[str], context: str, words: "list[str] | None",
+                   similar: "list[str] | None" = None) -> list[dict]:
+    u = (f"names: {', '.join(words)}\n" if words else "")
+    u += ("they have said before:\n" + "\n".join("- " + s for s in similar) + "\n") if similar else ""
+    u += "guesses:\n" + "\n".join("- " + c.lower() for c in candidates)
     msgs = [{"role": "system", "content": SMALL_SYSTEM}]
     for a, b in SMALL_SHOTS:
         msgs += [{"role": "user", "content": a}, {"role": "assistant", "content": b}]
@@ -125,6 +134,9 @@ class Cleaner:
         self._client = None
         self._mlx = None
         self._words: list[str] = []
+        self._similar: list[str] = []
+        from .personal import Personal
+        self.personal = Personal()
         if self.backend == "local":
             self.model = os.environ.get("LIPFLOW_LOCAL_MODEL", LOCAL_MODEL)
         elif self.backend == "claude":
@@ -169,7 +181,13 @@ class Cleaner:
         self._words = words or []
         from . import vocab
         words = vocab.load() if words is None else words
-        candidates = vocab.rerank([c for c in candidates if c.strip()], words)
+        candidates = [c for c in candidates if c.strip()]
+        if self.personal:
+            candidates = self.personal.rerank(candidates)
+            self._similar = self.personal.similar(" ".join(candidates[:2]))
+        else:
+            self._similar = []
+        candidates = vocab.rerank(candidates, words)
         if not candidates:
             return ""
         self._words = words or []
@@ -195,7 +213,7 @@ class Cleaner:
             output_config={"effort": "low"},
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
-            messages=[{"role": "user", "content": _user_prompt(candidates, context, self._words)}],
+            messages=[{"role": "user", "content": _user_prompt(candidates, context, self._words, self._similar)}],
         )
         if resp.stop_reason == "refusal":
             return None
@@ -206,7 +224,7 @@ class Cleaner:
         if self._mlx is None:
             self.warmup()
         model, tok = self._mlx
-        prompt = tok.apply_chat_template(small_messages(candidates, context, self._words), add_generation_prompt=True,
+        prompt = tok.apply_chat_template(small_messages(candidates, context, self._words, self._similar), add_generation_prompt=True,
                                          tokenize=False, enable_thinking=False)
         out = generate(model, tok, prompt=prompt, max_tokens=160, verbose=False)
         out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().split("\n")[0].strip()
@@ -221,7 +239,7 @@ class Cleaner:
             "stream": False,
             "think": False,
             "messages": [{"role": "system", "content": SYSTEM},
-                         {"role": "user", "content": _user_prompt(candidates, context, self._words)}],
+                         {"role": "user", "content": _user_prompt(candidates, context, self._words, self._similar)}],
             "options": {"temperature": 0},
         })
         r.raise_for_status()

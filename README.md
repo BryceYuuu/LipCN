@@ -1,4 +1,4 @@
-# Lipflow 👄
+# Lipflow
 
 **Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
 text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
@@ -17,7 +17,7 @@ Everything runs locally on your Mac. An optional LLM pass fixes the words lip re
 
 ```sh
 ./setup.sh            # uv sync + ~1.2 GB of models
-uv run lipflow        # starts the menu-bar app (👄 in the menu bar)
+uv run lipflow        # starts the menu-bar app (a mouth icon in the menu bar)
 ```
 
 The first time you use it, macOS asks for three permissions for whichever app launched
@@ -48,8 +48,20 @@ fixes casing, punctuation and numbers. The first backend that's available is use
 3. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
 4. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
 
+**Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.
+
+```sh
+uv run lipflow import-wispr     # or: --from-text my-writing.txt
+```
+
+This reads Wispr Flow's local database read-only, prints only counts, and saves your phrases to
+`~/Library/Application Support/Lipflow/phrases.txt`. Nothing leaves your Mac. Lipflow then:
+picks between the lip-reader's top 5 guesses using a small model of the word pairs you use;
+shows the cleanup model your past sentences closest to what it read; and adds names you
+capitalise often to your custom words for review. Restart Lipflow afterwards.
+
 **Custom words.** Names are the hardest thing to lip-read (a name is just lip shapes). Put yours
-in 👄 → *Edit custom words*, one per line (`~/Library/Application Support/Lipflow/words.txt`).
+in the Lipflow menu → *Edit custom words*, one per line (`~/Library/Application Support/Lipflow/words.txt`).
 A guess that contains one of your words wins over the others and gets your capitalization, and
 the LLM is told about them.
 
@@ -60,7 +72,7 @@ the LLM is told about them.
 | Hold **Right Option**, mouth the words, release | dictate |
 | Double-tap **Right Option** … tap again | hands-free (up to 60 s) |
 | **Esc** while listening | cancel |
-| 👄 menu → Copy last dictation / Open history | get text back |
+| Lipflow menu → Copy last dictation / Open history | get text back |
 
 Lipflow keeps filming for 0.4 s after you release the key, because the model needs the frames
 after the last word to read it.
