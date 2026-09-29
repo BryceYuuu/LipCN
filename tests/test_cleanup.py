@@ -26,3 +26,13 @@ def test_custom_words_pick_the_guess_and_fix_case():
     guesses = ["HELLO MCCALL I AM SENDING YOU A MESSAGE", "HELLO MIGUEL I AM SENDING YOU A MESSAGE"]
     assert c(guesses, words=["Miguel"]) == "Hello Miguel I am sending you a message."
     assert c(guesses, words=[]) == "Hello mccall I am sending you a message."
+
+
+def test_small_model_may_not_invent_words():
+    from lipflow.cleanup import within_guesses, fix_case
+    guesses = ["HELLO CAN YOU EAT WHAT I'M SAYING", "HELLO CAN YOU GUESS WHAT I'M SAYING"]
+    assert within_guesses("Hello, can you eat what I'm saying?", guesses, strict=True)
+    assert not within_guesses("Hello, can you eat them?", guesses, strict=True)
+    assert within_guesses("Hello, can you guess what I'm saying?", guesses, strict=False)
+    assert not within_guesses("Hello, can you eat them?", guesses, strict=False)
+    assert fix_case("hello miguel i'm here") == "Hello miguel I'm here"

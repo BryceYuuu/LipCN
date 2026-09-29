@@ -28,6 +28,19 @@ from .paste import copy_text, paste_text
 from .vsr import LipReader
 
 HISTORY = os.path.expanduser("~/Library/Application Support/Lipflow/history.jsonl")
+SETTINGS = os.path.expanduser("~/Library/Application Support/Lipflow/settings.json")
+
+
+def load_settings() -> dict:
+    try:
+        return json.load(open(SETTINGS))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(d: dict):
+    os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
+    json.dump(d, open(SETTINGS, "w"), indent=2)
 MIN_SECONDS = 0.6
 MAX_SECONDS = 60.0
 PREVIEW_EVERY = 0.45
@@ -40,7 +53,7 @@ class Options:
     key: str = "right_option"
     beam: int = 10
     backend: str = "auto"
-    camera: int = 0
+    camera: "int | str" = "auto"  # 'auto' = the Mac's built-in camera
     paste: bool = True
     live_preview: bool = True
 
@@ -66,7 +79,9 @@ class Lipflow(NSObject):
         self.hands_free = False
         self.pending_stop = None
         self.loading = True
-        self.camera = Camera(opts.camera, on_frame=self.onFrame)
+        self.settings = load_settings()
+        cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
+        self.camera = Camera(cam, on_frame=self.onFrame)
         return self
 
     # -- setup ---------------------------------------------------------------------
@@ -113,12 +128,44 @@ class Lipflow(NSObject):
         self._item(menu, f"Personalised from {n:,} of your phrases" if n else
                    "Not personalised yet: run lipflow import-wispr", None, icon="person.text.rectangle")
         menu.addItem_(NSMenuItem.separatorItem())
+        self._camera_menu(menu)
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
         self._item(menu, "Open history", "openHistory:", icon="clock.arrow.circlepath")
         self._item(menu, "Edit custom words…", "openWords:", icon="character.book.closed")
         menu.addItem_(NSMenuItem.separatorItem())
         self._item(menu, "Quit Lipflow", "quit:", "q", icon="power")
         self.status.setMenu_(menu)
+
+    @objc.python_method
+    def _camera_menu(self, menu):
+        from .camera import list_cameras, resolve_camera
+        parent = self._item(menu, "Camera", None, icon="camera")
+        parent.setEnabled_(True)
+        sub = NSMenu.alloc().init()
+        self.cam_items = []
+        try:
+            cams = list_cameras()
+        except Exception:
+            cams = []
+        current = resolve_camera(self.camera.index) if not isinstance(self.camera.index, str) or \
+            not os.path.exists(self.camera.index) else None
+        for c in cams:
+            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(c["name"], "pickCamera:", "")
+            it.setTarget_(self)
+            it.setRepresentedObject_(c["id"])
+            it.setState_(1 if c["index"] == current else 0)
+            sub.addItem_(it)
+            self.cam_items.append(it)
+        parent.setSubmenu_(sub)
+
+    def pickCamera_(self, sender):
+        cam_id = sender.representedObject()
+        self.settings["camera"] = cam_id
+        save_settings(self.settings)
+        self.camera.set_source(cam_id)
+        for it in self.cam_items:
+            it.setState_(1 if it.representedObject() == cam_id else 0)
+        print(f"[lipflow] camera: {sender.title()}")
 
     @objc.python_method
     def _set_status_icon(self, listening: bool):

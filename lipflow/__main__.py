@@ -22,7 +22,8 @@ def main(argv=None):
     r.add_argument("--key", default="right_option", choices=list(KEYS), help="push-to-talk key")
     r.add_argument("--beam", type=int, default=10, help="beam size (higher = slower, slightly better)")
     r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic"])
-    r.add_argument("--camera", default="0", help="camera index, or a video file to use instead")
+    r.add_argument("--camera", default="auto",
+                   help="'auto' (the Mac's built-in camera), part of a camera's name, or a video file")
     r.add_argument("--copy-only", action="store_true", help="copy to the clipboard instead of pasting")
     r.add_argument("--no-preview", action="store_true", help="don't show live words while you talk")
 
@@ -70,7 +71,7 @@ def main(argv=None):
         sys.exit(doctor())
     else:
         from .app import Options, run
-        run(Options(key=args.key, beam=args.beam, backend=args.cleanup, camera=int(args.camera) if args.camera.isdigit() else args.camera,
+        run(Options(key=args.key, beam=args.beam, backend=args.cleanup, camera=args.camera,
                     paste=not args.copy_only, live_preview=not args.no_preview))
 
 

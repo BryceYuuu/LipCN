@@ -114,6 +114,30 @@ def small_messages(candidates: list[str], context: str, words: "list[str] | None
     return msgs + [{"role": "user", "content": u}]
 
 
+def fix_case(text: str) -> str:
+    """Sentence-case start and a capital I, whatever the model returned."""
+    t = text.strip()
+    if not t:
+        return t
+    t = re.sub(r"\bi\b", "I", t)
+    t = re.sub(r"\bi'(m|ll|ve|d)\b", lambda m: "I'" + m.group(1), t)
+    return t[0].upper() + t[1:]
+
+
+def _norm_words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", numbers_to_digits(text.lower()))
+
+
+def within_guesses(out: str, candidates: list[str], strict: bool) -> bool:
+    """Small models may only format, and pick words the lip-reader actually proposed.
+    strict: same words as the top guess. loose: every word appears in some guess."""
+    words = _norm_words(out)
+    if strict:
+        return words == _norm_words(candidates[0])
+    pool = {w for c in candidates for w in _norm_words(c)}
+    return bool(words) and all(w in pool for w in words)
+
+
 def basic_cleanup(text: str) -> str:
     t = numbers_to_digits(text.strip().lower())
     if not t:
@@ -135,6 +159,7 @@ class Cleaner:
         self._mlx = None
         self._words: list[str] = []
         self._similar: list[str] = []
+        self.strict = os.environ.get("LIPFLOW_LOCAL_STRICT", "1") == "1"  # measured: loose mode invents words
         from .personal import Personal
         self.personal = Personal()
         if self.backend == "local":
@@ -228,10 +253,11 @@ class Cleaner:
                                          tokenize=False, enable_thinking=False)
         out = generate(model, tok, prompt=prompt, max_tokens=160, verbose=False)
         out = re.sub(r"<think>.*?</think>", "", out, flags=re.S).strip().split("\n")[0].strip()
-        # a tiny model that answers instead of fixing, or wanders off, isn't trusted
-        if not out or len(out) > 2 * len(candidates[0]) + 20 or out.isupper():
+        # a tiny model that invents words is worse than no model (measured on real dictations),
+        # so it may only format and choose among the lip-reader's own words
+        if not out or out.isupper() or not within_guesses(out, candidates, self.strict):
             return None
-        return out
+        return fix_case(out)
 
     def _ollama(self, candidates: list[str], context: str) -> "str | None":
         r = requests.post("http://127.0.0.1:11434/api/chat", timeout=20, json={

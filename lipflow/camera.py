@@ -9,6 +9,7 @@ recording, so the green light isn't on all day.
 """
 from __future__ import annotations
 
+import os
 import threading
 import time
 from dataclasses import dataclass, field
@@ -41,8 +42,38 @@ class Recording:
         return self.ts[-1] - self.ts[0] if len(self.ts) > 1 else 0.0
 
 
+def list_cameras() -> list[dict]:
+    """Cameras in OpenCV's index order. OpenCV's AVFoundation backend sorts devices by uniqueID,
+    which is *not* macOS's order, so a Continuity Camera iPhone often lands at index 0."""
+    from AVFoundation import AVCaptureDevice, AVMediaTypeMuxed, AVMediaTypeVideo
+    devs = list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeVideo)) + \
+        list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeMuxed))
+    devs.sort(key=lambda d: d.uniqueID())
+    return [{"index": i, "name": str(d.localizedName()), "id": str(d.uniqueID()),
+             "builtin": "BuiltIn" in str(d.deviceType())} for i, d in enumerate(devs)]
+
+
+def resolve_camera(pref) -> "int | str":
+    """'auto' → the Mac's own camera (never an iPhone); a name or id → that camera; an int or a
+    video file path passes through."""
+    if isinstance(pref, int) or (isinstance(pref, str) and os.path.exists(pref)):
+        return pref
+    cams = list_cameras()
+    if not cams:
+        return 0
+    if pref and pref != "auto":
+        for c in cams:
+            if pref == c["id"] or pref.lower() in c["name"].lower():
+                return c["index"]
+    for c in cams:
+        if c["builtin"]:
+            return c["index"]
+    non_phone = [c for c in cams if "iphone" not in c["name"].lower()]
+    return (non_phone or cams)[0]["index"]
+
+
 class Camera:
-    def __init__(self, index: int = 0, width: int = 640, height: int = 480, idle_close: float = 45.0,
+    def __init__(self, index: "int | str" = "auto", width: int = 640, height: int = 480, idle_close: float = 45.0,
                  on_frame=None):
         self.index, self.width, self.height = index, width, height
         self.idle_close = idle_close
@@ -94,15 +125,21 @@ class Camera:
         return self._rec
 
     # -- thread --------------------------------------------------------------------
+    def set_source(self, pref):
+        """Switch camera; takes effect on the next recording."""
+        self.index = pref
+        self.close()
+
     def _open(self):
-        if isinstance(self.index, str):  # a video file standing in for the webcam (testing / demos)
+        if isinstance(self.index, str) and os.path.exists(self.index):  # a video file standing in for the webcam (testing / demos)
             cap = cv2.VideoCapture(self.index)
             self._file_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             if not cap.isOpened():
                 raise RuntimeError(f"Could not open {self.index}")
             return cap
         self._file_fps = None
-        cap = cv2.VideoCapture(self.index, cv2.CAP_AVFOUNDATION)
+        idx = resolve_camera(self.index)
+        cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
