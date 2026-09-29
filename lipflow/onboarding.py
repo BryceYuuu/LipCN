@@ -164,6 +164,8 @@ class Onboarding(NSObject):
     def show(self):
         if self.page is None:
             self.welcome()
+        if not hasattr(self, "_shown"):
+            self._shown = True
         self.app.hud.hide()  # drop the "Loading…" pill
         from AppKit import NSApplication, NSFloatingWindowLevel
         app = NSApplication.sharedApplication()

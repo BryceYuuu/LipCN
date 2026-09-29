@@ -89,6 +89,8 @@ class Lipflow(NSObject):
         self.loading = True
         self.settings = load_settings()
         cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
+        if opts.key == "right_option" and self.settings.get("key"):
+            opts.key = self.settings["key"]
         self.camera = Camera(cam, on_frame=self.onFrame)
         return self
 
@@ -140,7 +142,8 @@ class Lipflow(NSObject):
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
         self._item(menu, "Open history", "openHistory:", icon="clock.arrow.circlepath")
         self._item(menu, "Edit custom words…", "openWords:", icon="character.book.closed")
-        self._item(menu, "Set up / train on my face…", "openSetup:", icon="person.crop.square")
+        self._item(menu, "Practice & train more…", "trainMore:", icon="person.crop.square")
+        self._item(menu, "Settings…", "openSettings:", ",", icon="gearshape")
         menu.addItem_(NSMenuItem.separatorItem())
         self._item(menu, "Quit Lipflow", "quit:", "q", icon="power")
         self.status.setMenu_(menu)
@@ -207,13 +210,24 @@ class Lipflow(NSObject):
     def openSetup_(self, sender):
         self.show_setup()
 
+    def trainMore_(self, sender):
+        self.show_setup(start_at="practice")
+
+    def openSettings_(self, sender):
+        from .settings_window import Settings
+        if getattr(self, "settings_win", None) is None:
+            self.settings_win = Settings.alloc().initWithApp_(self)
+        self.settings_win.show()
+
     @objc.python_method
-    def show_setup(self):
+    def show_setup(self, start_at: str = "welcome"):
         from .onboarding import Onboarding
         if self.setup is None:
             self.setup = Onboarding.alloc().initWithApp_(self)
         self.camera.track_always = True
         self.setup.show()
+        if start_at == "practice":
+            self.setup.goPractice_(None)
 
     def openWords_(self, sender):
         from . import vocab
@@ -238,8 +252,9 @@ class Lipflow(NSObject):
             return
         self.session += 1
         self.hands_free = hands_free
-        from .context import capture
-        self.ctx = capture()  # the app you're typing into is frontmost right now
+        from .context import Context, capture
+        # the app you're typing into is frontmost right now
+        self.ctx = capture() if self.settings.get("use_context", True) else Context()
         rec = self.camera.start_recording()
         self._set_status_icon(True)
         title = "Hands-free · tap to finish" if hands_free else "Listening"
@@ -338,6 +353,9 @@ class Lipflow(NSObject):
                     self._final(job[1])
                 elif job[0] == "train":
                     self._train(job[1])
+                elif job[0] == "reload":  # e.g. face model reset from Settings
+                    self.reader = LipReader(beam_size=self.opts.beam)
+                    self.reader.warmup()
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -507,6 +525,9 @@ class Lipflow(NSObject):
         self.reader.warmup()
         self.loading = False
         print(f"[lipflow] onboarding: held-out WER {before:.1%} → {after:.1%} ({'kept' if kept else 'discarded'})")
+        self.settings["training"] = {"before": before, "after": after, "kept": kept, "clips": len(clips),
+                                     "at": time.time()}
+        save_settings(self.settings)
         ob.finished(before, after, kept, note)
 
     @objc.python_method
