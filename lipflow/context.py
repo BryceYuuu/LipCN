@@ -24,6 +24,8 @@ class Context:
     title: str = ""
     near_text: str = ""
     names: list[str] = field(default_factory=list)
+    element: object = None   # the focused text field (for learning from corrections); memory only
+    value: str = ""          # its full contents before the paste; memory only
 
     def describe(self) -> str:
         bits = [self.app] + ([f'"{self.title[:60]}"'] if self.title else [])
@@ -73,6 +75,7 @@ def capture(max_chars: int = 600) -> Context:
         if focused is not None:
             val = _ax(focused, "AXValue")
             if isinstance(val, str):
+                ctx.element, ctx.value = focused, val
                 ctx.near_text = val[-max_chars:]
             if not ctx.near_text:
                 ph = _ax(focused, "AXPlaceholderValue")  # e.g. Slack's "Message Miguel"

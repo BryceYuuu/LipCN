@@ -18,7 +18,7 @@ from .hud import ACCENT, GREEN, _glass, _rgb, symbol
 from .onboarding import GlassWindow, _text
 from .paths import HOME, PERSONAL_VSR
 
-SW, SH = 560, 620
+SW, SH = 560, 660
 
 
 def _capsule(target, title, action, frame, primary=False):
@@ -95,6 +95,10 @@ class Settings(NSObject):
                     + ("" if t["kept"] else ", not better, so the standard model is used."))
         else:
             line = f"{n} practice clips so far." + (" Not trained yet." if not os.path.exists(PERSONAL_VSR) else "")
+        from . import corrections
+        nc = corrections.count()
+        if nc:
+            line += f" Plus {nc} learned from your corrections."
         _text(p, NSMakeRect(36, y - 46, SW - 72, 40), line, 13, alpha=0.8)
         _text(p, NSMakeRect(36, y - 84, SW - 72, 36),
               "Each round is 24 new sentences (about 5 minutes) and it retrains on everything you've recorded. "
@@ -119,7 +123,9 @@ class Settings(NSObject):
                                        s.get("use_context", True), "toggleContext:")
         self.clip_switch = self._switch(p, y - 166, "Keep my last 100 clips to measure accuracy",
                                         s.get("save_clips", True), "toggleClips:")
-        _text(p, NSMakeRect(36, y - 206, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
+        self.learn_switch = self._switch(p, y - 208, "Learn from words I correct after pasting",
+                                         s.get("learn_corrections", True), "toggleLearn:")
+        _text(p, NSMakeRect(36, y - 246, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Open my data folder", "openData:", NSMakeRect(36, 40, 190, 34)))
         _text(p, NSMakeRect(240, 48, SW - 276, 18), "Clips, phrases, your trained models. Never uploaded.",
               11.5, alpha=0.5)
@@ -192,6 +198,10 @@ class Settings(NSObject):
 
     def toggleClips_(self, sender):
         self.app.settings["save_clips"] = bool(sender.state())
+        self._save()
+
+    def toggleLearn_(self, sender):
+        self.app.settings["learn_corrections"] = bool(sender.state())
         self._save()
 
     def openData_(self, sender):

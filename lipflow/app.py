@@ -461,6 +461,9 @@ class Lipflow(NSObject):
         self._save_clip(rois, candidates, text)
         if self.opts.paste:
             ui(paste_text, out)
+            if ctx is not None and ctx.element is not None and self.settings.get("learn_corrections", True):
+                from .corrections import Watcher
+                ui(lambda: Watcher(ctx.element, ctx.value, out, rois, candidates).start())
         else:
             ui(copy_text, text)
         ui(self.hud.show, "done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
@@ -499,13 +502,16 @@ class Lipflow(NSObject):
                         if r["saved"] else "")
             except Exception as e:
                 print(f"[lipflow] train-lm failed: {e}")
+        from . import corrections
         clips = saved_clips()
+        learned = corrections.load_all()
         if len(clips) < N_HELD_OUT + 6:
             ob.finished(0, None, False, "Not enough practice clips to train on. Run setup again from the menu.")
             self.loading = False
             return
         _r.Random(1).shuffle(clips)
-        test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:]
+        # held out: practice clips only (their text is certain); corrections only ever train
+        test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:] + learned
         ob.report(15, f"Measuring the standard model on {len(test)} of your sentences…")
         base = LipReader(beam_size=self.opts.beam, personal=False)
 
