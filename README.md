@@ -41,6 +41,20 @@ To start Lipflow at login: System Settings → General → Login Items → add L
 `~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
 macOS asks for permissions in the terminal's name.
 
+### Most accurate: whisper mode
+
+Settings → **Whisper mode**. While you hold the key, Lipflow also listens to a soft whisper and
+reads lips + audio together with the Auto-AVSR audio-visual model (downloaded the first time,
+1.8 GB). On test sentences, lips alone got 31.9% of words wrong; lips + audio got 6.9%. A real
+whisper is less clear than those test clips, so expect somewhere in between. The mic is only on
+while you hold the key.
+
+### Learning from your corrections
+
+When you fix a word Lipflow typed (within about 30 seconds), it saves that clip with your
+corrected sentence, and the next *Practice & train more* round uses it. Only the text field it
+pasted into is read. Switch it off in Settings.
+
 ### Better accuracy: turn on LLM cleanup
 
 Lip reading can't tell apart words that look the same on the lips (p/b/m, f/v, t/d/n…), so the raw

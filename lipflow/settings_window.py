@@ -18,7 +18,7 @@ from .hud import ACCENT, GREEN, _glass, _rgb, symbol
 from .onboarding import GlassWindow, _text
 from .paths import HOME, PERSONAL_VSR
 
-SW, SH = 560, 660
+SW, SH = 560, 700
 
 
 def _capsule(target, title, action, frame, primary=False):
@@ -125,7 +125,9 @@ class Settings(NSObject):
                                         s.get("save_clips", True), "toggleClips:")
         self.learn_switch = self._switch(p, y - 208, "Learn from words I correct after pasting",
                                          s.get("learn_corrections", True), "toggleLearn:")
-        _text(p, NSMakeRect(36, y - 246, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
+        self.whisper_switch = self._switch(p, y - 250, "Whisper mode: lips + a soft whisper (uses the mic)",
+                                           s.get("whisper", False), "toggleWhisper:")
+        _text(p, NSMakeRect(36, y - 288, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Open my data folder", "openData:", NSMakeRect(36, 40, 190, 34)))
         _text(p, NSMakeRect(240, 48, SW - 276, 18), "Clips, phrases, your trained models. Never uploaded.",
               11.5, alpha=0.5)
@@ -199,6 +201,13 @@ class Settings(NSObject):
     def toggleClips_(self, sender):
         self.app.settings["save_clips"] = bool(sender.state())
         self._save()
+
+    def toggleWhisper_(self, sender):
+        on = bool(sender.state())
+        self.app.settings["whisper"] = on
+        self._save()
+        if on and self.app.av_reader is None:
+            self.app.jobs.put(("whisper",))  # downloads the model the first time
 
     def toggleLearn_(self, sender):
         self.app.settings["learn_corrections"] = bool(sender.state())

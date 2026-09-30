@@ -83,6 +83,9 @@ class Lipflow(NSObject):
         self.context: list[str] = []
         self.hands_free = False
         self.pending_stop = None
+        from .mic import Mic
+        self.mic = Mic()
+        self.av_reader = None        # whisper mode's audio-visual model, loaded when switched on
         self._ui_busy = False        # a video frame is waiting to be drawn on the main thread
         self.onboarding = None       # the setup window while it's collecting practice clips
         self.onboarding_text = ""
@@ -257,6 +260,8 @@ class Lipflow(NSObject):
         # the app you're typing into is frontmost right now
         self.ctx = capture() if self.settings.get("use_context", True) else Context()
         rec = self.camera.start_recording()
+        if self.whisper_on:
+            self.mic.start()
         self._set_status_icon(True)
         title = "Hands-free · tap to finish" if hands_free else "Listening"
         self.hud.show("listening", title, "" if self.camera.ready.is_set() else "Starting camera…")
@@ -279,12 +284,15 @@ class Lipflow(NSObject):
             return
         self.pending_stop = None
         rec = self.camera.stop_recording()
+        audio = self.mic.stop() if self.whisper_on else []
         if rec is not None:
+            rec.audio = audio
             self.jobs.put(("final", rec))
 
     @objc.python_method
     def on_cancel(self, silent: bool = False):
         self.pending_stop = None
+        self.mic.stop()
         self._set_status_icon(False)
         self.session += 1
         self.hands_free = False
@@ -354,6 +362,8 @@ class Lipflow(NSObject):
                     self._final(job[1])
                 elif job[0] == "train":
                     self._train(job[1])
+                elif job[0] == "whisper":
+                    self._load_whisper()
                 elif job[0] == "reload":  # e.g. face model reset from Settings
                     self.reader = LipReader(beam_size=self.opts.beam)
                     self.reader.warmup()
@@ -383,10 +393,45 @@ class Lipflow(NSObject):
         name = self.opts.key.replace("_", " ").title()
         ui(self.state_item.setTitle_, "Ready")
         ui(self.state_item.setImage_, symbol("checkmark.circle", 13, NSFontWeightRegular))
+        if self.settings.get("whisper"):
+            self.jobs.put(("whisper",))
         if self.opts.onboard or not self.settings.get("onboarded"):
             ui(self.show_setup)
         else:
             ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
+
+    @property
+    def whisper_on(self) -> bool:
+        return bool(self.settings.get("whisper")) and self.av_reader is not None and self.onboarding is None
+
+    @objc.python_method
+    def _load_whisper(self):
+        """Model thread: download (first time, 1.8 GB) and load the audio-visual model."""
+        from . import av
+        if not av.available():
+            ui(self.hud.show, "reading", "Whisper mode", "Downloading the audio-visual model (1.8 GB)…")
+            try:
+                av.download(lambda pct: ui(self.hud.set_text, f"Downloading the audio-visual model… {pct:.0f}%"))
+            except Exception as e:
+                ui(self.hud.show, "error", "Whisper mode", f"Download failed: {e}"[:80], 5.0)
+                return
+        ui(self.hud.show, "reading", "Whisper mode", "Loading…")
+        self.av_reader = av.AVReader(beam_size=self.opts.beam)
+        self.av_reader.warmup_av()
+        print("[lipflow] whisper mode ready (lips + audio)")
+        ui(self.hud.show, "done", "Whisper mode on", "Whisper or speak softly while you mouth the words", 3.0)
+
+    @objc.python_method
+    def _av_candidates(self, rec, rois):
+        """Lips + audio when whisper mode has audio for this clip, else None."""
+        from .mic import segment
+        if not self.whisper_on or not getattr(rec, "audio", None):
+            return None
+        ts, _, _ = rec.snapshot()
+        wave = segment(rec.audio, ts[0], rois.shape[0])
+        if wave is None:
+            return None
+        return self.av_reader.beam_search(self.av_reader.encode_av(rois, wave), nbest=5)
 
     @objc.python_method
     def _rois(self, rec: Recording):
@@ -435,7 +480,7 @@ class Lipflow(NSObject):
             ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
             ui(self.hud.hide)
             return
-        candidates = self.reader.beam_search(enc, nbest=5)
+        candidates = self._av_candidates(rec, rois) or self.reader.beam_search(enc, nbest=5)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)

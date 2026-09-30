@@ -47,3 +47,15 @@ def test_face_crop_offsets_give_the_same_mouth_patch():
     full = mouth_rois(frames, anchors)
     crops = [(f[150:650, 300:900], (300, 150)) for f in frames]
     assert np.abs(mouth_rois(crops, anchors).astype(int) - full.astype(int)).max() <= 1
+
+
+def test_mic_segment_aligns_to_video_clock():
+    from lipflow import mic
+    rate = mic.RATE
+    t = np.arange(rate * 2) / rate
+    wave = np.sin(2 * np.pi * 5 * t).astype(np.float32)
+    start = 1000.0
+    chunks = [(start + i / rate, wave[i:i + 1600]) for i in range(0, len(wave), 1600)]
+    seg = mic.segment(chunks, start + 0.5 + mic.CAMERA_LATENCY, 25)  # 1 s of video starting at +0.5 s
+    assert len(seg) == 16000
+    assert np.allclose(seg, wave[8000:24000], atol=1e-6)

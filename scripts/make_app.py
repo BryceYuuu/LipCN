@@ -89,6 +89,8 @@ def build(dest_dir: str = "/Applications") -> str:
         "LSMinimumSystemVersion": "13.0",
         "NSCameraUsageDescription": "Lipflow reads your lips from the camera to type what you mouth. "
                                     "Video never leaves this Mac.",
+        "NSMicrophoneUsageDescription": "Whisper mode listens to a soft whisper while you hold the key, "
+                                        "to read your lips more accurately. Audio never leaves this Mac.",
         "NSHighResolutionCapable": True,
     }, open(os.path.join(app, "Contents", "Info.plist"), "wb"))
     launcher = os.path.join(macos, "Lipflow")
