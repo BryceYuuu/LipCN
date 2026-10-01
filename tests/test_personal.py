@@ -36,7 +36,8 @@ def test_import_finds_formatted_text_and_names(home):
     stats = personal.import_wispr(str(home / "Wispr Flow"))
     assert stats["source"].endswith("History.formattedText")
     assert stats["phrases"] == 6
-    assert "Vizcom" in stats["new_names"] and "Miguel" not in stats["new_names"]  # already listed
+    assert "Vizcom" in stats["new_names"] and "Miguel" in stats["new_names"]
+    assert "Lipflow" not in stats["new_names"]  # already listed
     assert "Miguel" in vocab.load()
 
 

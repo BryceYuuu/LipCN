@@ -480,9 +480,15 @@ class Lipflow(NSObject):
             ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
             ui(self.hud.hide)
             return
-        candidates = self._av_candidates(rec, rois) or self.reader.beam_search(enc, nbest=5)
+        # Whisper mode reads empty when there's no audible whisper (silent mouthing): fall back to lips
+        candidates = self._av_candidates(rec, rois)
+        if not candidates or not candidates[0]:
+            if candidates is not None:
+                print("[lipflow] lips + audio read nothing, using lips only")
+            candidates = self.reader.beam_search(enc, nbest=5)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
+            print(f"[lipflow] {rec.duration:.1f}s clip: nothing read")
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
         ui(self.hud.set_text, candidates[0].lower())

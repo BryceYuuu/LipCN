@@ -13,7 +13,7 @@ Everything runs locally on your Mac. An optional LLM pass fixes the words lip re
                      live preview: greedy CTC every 0.45 s while you talk
 ```
 
-## Setup (for you and your coworkers)
+## Setup
 
 Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
 
@@ -149,3 +149,9 @@ Code map: `lipflow/face.py` (landmarks → mouth crops), `vsr.py` (model), `came
 (Quartz event tap; pynput's macOS listener crashes on recent macOS), `paste.py`, `hud.py`,
 `cleanup.py`, `app.py` (wiring + menu bar). See `NOTICE` for bundled code and model licensing.
 The LRS3-trained weights are for non-commercial research use.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own license, listed in
+[NOTICE](NOTICE). The model weights that setup.sh downloads come from the LRS3 dataset, which is
+for non-commercial research use only.
