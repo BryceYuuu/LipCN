@@ -61,6 +61,20 @@ def test_default_fails_and_lists_oov_without_creating_output(tmp_path, monkeypat
     assert not output.exists()
 
 
+def test_output_parent_symlink_alias_keeps_loadable_video_paths(tmp_path, monkeypatch):
+    physical = tmp_path / 'physical'
+    physical.mkdir()
+    source, vocab = fixture(physical, monkeypatch)
+    alias = tmp_path / 'alias'
+    alias.symlink_to(physical, target_is_directory=True)
+    output = alias / 'prepared.json'
+    result = preparation.prepare(source, vocab, output, exclude_unsupported_training_samples=True)
+    assert result['samples'][0]['video'] == 'video0.mp4'
+    actual = load_manifest(output)
+    assert Path(actual.samples[0].video) == physical / 'video0.mp4'
+    assert (output.resolve().parent / result['development_samples'][0]['video']).resolve() == physical / 'video0.mp4'
+
+
 @pytest.mark.parametrize('split,row_split', [('dev', None), ('test', None), ('train', 'test')])
 def test_dev_test_cannot_be_filtered_even_with_permission(tmp_path, monkeypatch, split, row_split):
     source, vocab = fixture(tmp_path, monkeypatch, split=split, row_split=row_split)

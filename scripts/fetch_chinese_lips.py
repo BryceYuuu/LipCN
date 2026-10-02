@@ -19,6 +19,8 @@ from pathlib import Path
 import re
 import struct
 import threading
+import time
+import urllib.error
 import urllib.request
 import zipfile
 import zlib
@@ -61,16 +63,26 @@ def fetch_range(url: str, size: int, start: int, count: int, budget: DownloadBud
         raise ValueError('invalid byte range')
     if count == 0:
         return b''
-    budget.reserve(count)
     end = start + count - 1
     request = urllib.request.Request(url, headers={'Range': f'bytes={start}-{end}'})
-    with opener(request, timeout=45) as response:
-        expected = f'bytes {start}-{end}/{size}'
-        # Reject before reading a server that ignores Range; never fetch its
-        # entire multi-GB archive, even if HTTP reports success.
-        if response.status != 206 or response.headers.get('Content-Range') != expected:
-            raise ValueError(f'Server did not honor bounded HTTP Range: {response.status}')
-        data = response.read(count + 1)
+    for attempt in range(3):
+        budget.reserve(count)  # Every retry is charged before opening the connection.
+        try:
+            with opener(request, timeout=45) as response:
+                expected = f'bytes {start}-{end}/{size}'
+                # Reject before reading a server that ignores Range; never fetch its
+                # entire multi-GB archive, even if HTTP reports success.
+                if response.status != 206 or response.headers.get('Content-Range') != expected:
+                    raise ValueError(f'Server did not honor bounded HTTP Range: {response.status}')
+                data = response.read(count + 1)
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
+                raise
+        except (urllib.error.URLError, OSError):
+            if attempt == 2:
+                raise
+        time.sleep(.5 * (2 ** attempt))
     if len(data) != count:
         raise ValueError('truncated or oversized range response')
     return data
@@ -174,14 +186,54 @@ def _metadata(filename, size, digest, output, budget):
     return list(csv.DictReader(io.StringIO(data.decode('utf-8-sig'))))
 
 
-def prepare_subset(output: Path, counts: dict, speakers: dict, seed: str, maximum: int) -> dict:
+def test_exclusions(path: Path | None) -> tuple[frozenset[str], dict | None]:
+    """Reserve new speakers without reading prior recognition or ranking labels."""
+    if path is None:
+        return frozenset(), None
+    encoded = path.read_bytes()
+    manifest = json.loads(encoded)
+    if (not isinstance(manifest, dict) or manifest.get('schema_version') != 1 or
+            manifest.get('split') != 'test' or not isinstance(manifest.get('samples'), list) or
+            not manifest['samples']):
+        raise ValueError('Exclusion manifest must be a nonempty schema-1 test partition')
+    source = manifest.get('source', {})
+    if source.get('repository') != REPOSITORY or source.get('revision') != REVISION:
+        raise ValueError('Exclusion manifest must use the same pinned Chinese-LiPS source')
+    excluded = set()
+    for sample in manifest['samples']:
+        if not isinstance(sample, dict):
+            raise ValueError('Exclusion manifest has an invalid sample')
+        speaker = sample.get('speaker', '')
+        identifier = sample.get('source_id', '')
+        if (not isinstance(speaker, str) or not re.fullmatch(r'chinese-lips:\d+', speaker) or
+                not isinstance(identifier, str) or not ID_PATTERN.fullmatch(identifier) or
+                speaker.removeprefix('chinese-lips:') != identifier.split('_')[0]):
+            raise ValueError('Exclusion speaker must match the pinned source ID')
+        excluded.add(speaker.removeprefix('chinese-lips:'))
+    return frozenset(excluded), {
+        'manifest_sha256': hashlib.sha256(encoded).hexdigest(),
+        'excluded_speaker_ids': sorted(excluded), 'prior_sample_count': len(manifest['samples']),
+        'purpose': 'Fresh final test speakers; exclusion uses identities only, not prediction quality',
+    }
+
+
+def prepare_subset(output: Path, counts: dict, speakers: dict, seed: str, maximum: int,
+                   exclude_test_manifest: Path | None = None, download_workers: int = 4) -> dict:
+    if type(download_workers) is not int or not 1 <= download_workers <= 16:
+        raise ValueError('download workers must be an integer within [1,16]')
+    excluded, exclusion_evidence = test_exclusions(exclude_test_manifest)
     output.mkdir(parents=True, exist_ok=True)
     budget, manifests, identity_sets = DownloadBudget(maximum), {}, {}
     for split in ('dev', 'train', 'test'):
         meta, meta_size, meta_hash, archive, archive_size, archive_hash = FILES[split]
         rows = _metadata(meta, meta_size, meta_hash, output, budget)
         identity_sets[split] = {row['ID'].split('_')[0] for row in rows}
-        selected = select_rows(rows, counts[split], speakers[split], seed + ':' + split)
+        selection_rows = rows
+        if split == 'test' and excluded:
+            if not excluded.issubset(identity_sets[split]):
+                raise ValueError('Excluded speaker does not belong to the pinned official test split')
+            selection_rows = [row for row in rows if row['ID'].split('_')[0] not in excluded]
+        selected = select_rows(selection_rows, counts[split], speakers[split], seed + ':' + split)
         remote = RangeFile(url_for(archive), archive_size, budget)
         with zipfile.ZipFile(remote) as zipped:
             index = {entry.filename: entry for entry in zipped.infolist()}
@@ -196,6 +248,7 @@ def prepare_subset(output: Path, counts: dict, speakers: dict, seed: str, maximu
                        'archive_bytes': archive_size, 'archive_sha256_from_publisher': archive_hash,
                        'whole_archive_hash_verified': False, 'member_crc_verified': True,
                        'seed': seed, 'selection': 'hash-ranked speakers and IDs, round-robin; no label filtering',
+                       'prior_test_exclusions': exclusion_evidence if split == 'test' else None,
                        'audio_downloaded': False, 'slides_downloaded': False,
                        'label_provenance': 'Author-provided manual transcript; no model-generated labels'},
             'samples': [],
@@ -227,7 +280,7 @@ def prepare_subset(output: Path, counts: dict, speakers: dict, seed: str, maximu
                     'label_verified': True, 'sha256': hashlib.sha256(data).hexdigest(),
                     'archive_member': member, 'archive_member_crc32': f'{info.CRC:08x}',
                     'source_id': identifier, 'topic': row['TOPIC']}
-        with ThreadPoolExecutor(max_workers=4) as pool:
+        with ThreadPoolExecutor(max_workers=download_workers) as pool:
             manifest['samples'] = list(pool.map(fetch, selected))
         manifests[split] = manifest
         (output / f'{split}.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
@@ -241,7 +294,11 @@ def prepare_subset(output: Path, counts: dict, speakers: dict, seed: str, maximu
     manifests['test']['source']['official_speaker_split_overlap_checked'] = True
     (output / 'test.json').write_text(json.dumps(manifests['test'], ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     summary = {'source': SOURCE, 'revision': REVISION, 'license': LICENSE,
+               'seed': seed, 'prior_test_exclusions': exclusion_evidence,
                'download_bytes_requested': budget.requested, 'download_budget_bytes': maximum,
+               'download_workers': download_workers,
+               'download_accounting': ('Requested ranges in this invocation, including retries; '
+                                       'previous runs and locally cached members are not included.'),
                'splits': {key: {'clips': len(value['samples']), 'speakers': len({s['speaker'] for s in value['samples']}),
                                'manifest': str(output / f'{key}.json')} for key, value in manifests.items()},
                'limitations': ['Only author mouth crops; not live webcam or intentional mute recordings.',
@@ -258,6 +315,10 @@ def main(argv=None):
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--max-download-mb', type=int, default=500)
     parser.add_argument('--seed', default='lipflow-chinese-lips-v1')
+    parser.add_argument('--download-workers', type=int, default=4,
+                        help='Bounded parallel range downloads (1-16); cached videos are reused')
+    parser.add_argument('--exclude-test-manifest', type=Path,
+                        help='Prior inspected test manifest; reserve wholly different final test speakers')
     for split, count, speakers in [('train', 180, 12), ('dev', 30, 6), ('test', 50, 10)]:
         parser.add_argument(f'--{split}-count', type=int, default=count)
         parser.add_argument(f'--{split}-speakers', type=int, default=speakers)
@@ -270,7 +331,9 @@ def main(argv=None):
         for split in FILES:
             if counts[split] < speakers[split] or speakers[split] < 1:
                 raise ValueError(f'{split}: clip count must be >= positive speaker count')
-        summary = prepare_subset(args.output_dir.resolve(), counts, speakers, args.seed, args.max_download_mb * 1_000_000)
+        summary = prepare_subset(args.output_dir.resolve(), counts, speakers, args.seed,
+                                 args.max_download_mb * 1_000_000, args.exclude_test_manifest,
+                                 args.download_workers)
     except (ValueError, OSError, zipfile.BadZipFile) as exc:
         parser.error(str(exc))
     print(json.dumps(summary, ensure_ascii=False, indent=2))

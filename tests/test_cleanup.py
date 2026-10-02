@@ -62,12 +62,17 @@ def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
 
 def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
-
+    encoded = []
     class R:
-        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt", encoding="utf-8").read().splitlines()] + ["<eos>"]
+        # Inspect the text passed to the tokenizer without requiring a downloaded
+        # English model artifact in an otherwise local normalization test.
+        @staticmethod
+        def _tok(text):
+            encoded.append(text)
+            return [1, 2]
     r = R()
-    unk = r.token_list.index("<unk>")
-    assert unk not in _targets(r, "Hello, Miguel. It's done!")
+    assert _targets(r, "Hello, Miguel. It's done!") == [1, 2]
+    assert encoded == ["HELLO MIGUEL IT'S DONE"]
 
 
 def test_practice_mixes_own_and_harvard(tmp_path, monkeypatch):

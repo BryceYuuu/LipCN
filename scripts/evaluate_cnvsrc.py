@@ -194,6 +194,24 @@ def _load_adapter(reader, path: Path) -> dict:
             'usage': 'Local research evaluation only; no GUI or personal model installation'}
 
 
+def configured_hypotheses(reader, encoded, *, beam_size, ctc_weight, nbest=5, reverse_weight=0.0):
+    """Apply one frozen configuration; this function never sees labels or selects settings."""
+    if reverse_weight == 0:
+        hypotheses = reader.hypotheses(encoded, nbest=nbest)
+        return hypotheses, [asdict(hypothesis) for hypothesis in hypotheses]
+    from compare_chinese_decoders import decode_candidates, rerank_candidates, reverse_log_probability
+    from lipflow.confidence import Hypothesis
+
+    candidates = decode_candidates(reader, encoded, ctc_weight, beam_size, nbest)
+    candidates = rerank_candidates(
+        candidates, ctc_weight, reverse_weight,
+        lambda ids: reverse_log_probability(reader.model.r_decoder, encoded, ids,
+                                            len(reader.token_list) - 1),
+    )
+    hypotheses = [Hypothesis(row.text, row.score, max(len(row.token_ids), 1)) for row in candidates]
+    return hypotheses, [asdict(row) for row in candidates]
+
+
 def run(args) -> dict:
     from evaluate_chinese import ClipRejected, _visual_input
     from lipflow.confidence import assess
@@ -211,13 +229,16 @@ def run(args) -> dict:
             # The model receives images only. References stay in evaluate().
             rois, duration, quality = _visual_input(sample, reader)
             encoded = reader.encode(rois)
-            hypotheses = reader.hypotheses(encoded, nbest=5)
+            hypotheses, candidate_evidence = configured_hypotheses(
+                reader, encoded, beam_size=args.beam_size, ctc_weight=args.ctc_weight,
+                nbest=getattr(args, 'nbest', 5), reverse_weight=getattr(args, 'reverse_weight', 0.0),
+            )
             decision = assess(hypotheses, reader.greedy(encoded), quality, policy='review', language='zh')
             prediction = Prediction(
                 sample.id, hypotheses[0].text if hypotheses else '', duration,
                 time.monotonic() - started, decision.action, decision.reason, margin=decision.margin,
             )
-            candidates[sample.id] = [asdict(hypothesis) for hypothesis in hypotheses]
+            candidates[sample.id] = candidate_evidence
         except ClipRejected as exc:
             prediction = Prediction(sample.id, '', exc.duration, time.monotonic() - started,
                                     'retry', reason=str(exc))
@@ -240,6 +261,8 @@ def run(args) -> dict:
         'strict_load': True, 'state_tensor_count': reader.tensor_count,
         'state_tensor_values_including_buffers': reader.tensor_values,
         'beam_size': args.beam_size, 'ctc_weight': args.ctc_weight,
+        'nbest': getattr(args, 'nbest', 5), 'reverse_weight': getattr(args, 'reverse_weight', 0.0),
+        'decoder_configuration_selection_performed': False,
         'length_bonus': 0.0, 'external_lm': False, 'personal': False,
         'encoder_device': str(reader.enc_device), 'decoder_device': str(reader.device),
         'startup_seconds_including_verification_and_warmup': startup,
@@ -268,11 +291,21 @@ def main() -> int:
     parser.add_argument('--device', default='auto')
     parser.add_argument('--beam-size', type=int, default=40)
     parser.add_argument('--ctc-weight', type=float, default=.5)
+    parser.add_argument('--nbest', type=int, default=None,
+                        help='Frozen candidate count (default min(5, beam-size)); do not select on test data')
+    parser.add_argument('--reverse-weight', type=float, default=0.0,
+                        help='Frozen reverse rescoring weight selected on dev only; 0 preserves original decoding')
     args = parser.parse_args()
     if not args.accept_research_license:
         parser.error('Read the author VSR/LICENSE and pass --accept-research-license for non-commercial research')
     if args.beam_size < 1 or not math.isfinite(args.ctc_weight) or not 0 <= args.ctc_weight <= 1:
         parser.error('--beam-size must be positive and --ctc-weight finite within [0,1]')
+    if args.nbest is None:
+        args.nbest = min(5, args.beam_size)
+    if not 1 <= args.nbest <= args.beam_size:
+        parser.error('--nbest must be within [1, beam-size]')
+    if not math.isfinite(args.reverse_weight) or not 0 <= args.reverse_weight <= 1:
+        parser.error('--reverse-weight must be finite within [0,1]')
     try:
         report = run(args)
     except (OSError, ValueError) as exc:

@@ -27,7 +27,9 @@ from evaluate_cnvsrc import VOCABULARY_SHA256, _verified_file
 def _relative_video(video: str | Path, output_parent: Path) -> str:
     resolved = Path(video).resolve(strict=True)
     try:
-        return Path(os.path.relpath(resolved, output_parent)).as_posix()
+        # macOS /tmp -> /private/tmp aliases must use the same physical parent
+        # as load_manifest(), otherwise relocation can invent /private/private.
+        return Path(os.path.relpath(resolved, output_parent.resolve())).as_posix()
     except ValueError:  # Windows files on different drives cannot have a relative path.
         return str(resolved)
 
