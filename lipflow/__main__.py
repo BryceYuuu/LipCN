@@ -12,18 +12,35 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("OPENCV_AVFOUNDATION_SKIP_AUTH", "1")
 
 
+def _app():
+    """(Options, run) for this OS's front end: menu bar on macOS, system tray on Windows."""
+    if sys.platform == "win32":
+        from .win.app import Options, run
+    else:
+        from .app import Options, run
+    return Options, run
+
+
 def main(argv=None):
-    from .hotkey import KEYS
+    if sys.platform == "win32":
+        for stream in (sys.stdout, sys.stderr):  # ✓ and → in a cp1252 console or a pipe
+            if stream is not None and hasattr(stream, "reconfigure"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        from .win.hotkey import DEFAULT_KEY, KEYS
+    else:
+        from .hotkey import KEYS
+        DEFAULT_KEY = "right_option"
 
     p = argparse.ArgumentParser(prog="lipflow", description="Silent dictation by lip reading.")
     sub = p.add_subparsers(dest="cmd")
 
-    r = sub.add_parser("run", help="start the menu-bar dictation app (default)")
-    r.add_argument("--key", default="right_option", choices=list(KEYS), help="push-to-talk key")
+    r = sub.add_parser("run", help="start the dictation app in the menu bar / system tray (default)")
+    r.add_argument("--key", default=DEFAULT_KEY, choices=list(KEYS), help="push-to-talk key")
     r.add_argument("--beam", type=int, default=4, help="beam size (higher = slower, about the same accuracy)")
     r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic"])
     r.add_argument("--camera", default="auto",
-                   help="'auto' (the Mac's built-in camera), part of a camera's name, or a video file")
+                   help="'auto' (the built-in camera), a camera number, part of a camera's name (Mac), "
+                        "or a video file")
     r.add_argument("--copy-only", action="store_true", help="copy to the clipboard instead of pasting")
     r.add_argument("--no-preview", action="store_true", help="don't show live words while you talk")
 
@@ -59,7 +76,7 @@ def main(argv=None):
         from .personal import PHRASES, import_wispr, save_phrases
         from .vocab import PATH as WORDS
         if args.from_text:
-            stats = save_phrases(open(args.from_text).read().splitlines()) | {"source": args.from_text}
+            stats = save_phrases(open(args.from_text, encoding="utf-8").read().splitlines()) | {"source": args.from_text}
         else:
             stats = import_wispr()
         print(f"Imported {stats['phrases']:,} phrases ({stats['words']:,} words) from {stats['source']}")
@@ -75,14 +92,15 @@ def main(argv=None):
               f"general text {r['before']['general']:.1f} → {r['after']['general'] or r['before']['general']:.1f}"
               f" ({'saved' if r['saved'] else 'not better, not saved'})")
     elif cmd == "onboard":
-        from .app import Options, run
+        Options, run = _app()
         run(Options(onboard=True))
     elif cmd == "doctor":
         from .doctor import doctor
         sys.exit(doctor())
     else:
-        from .app import Options, run
-        run(Options(key=args.key, beam=args.beam, backend=args.cleanup, camera=args.camera,
+        Options, run = _app()
+        camera = int(args.camera) if args.camera.isdigit() else args.camera
+        run(Options(key=args.key, beam=args.beam, backend=args.cleanup, camera=camera,
                     paste=not args.copy_only, live_preview=not args.no_preview))
 
 

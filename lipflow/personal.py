@@ -15,13 +15,17 @@ import math
 import os
 import re
 import sqlite3
+import sys
 from collections import Counter
 
 from . import vocab
 
 from .paths import HOME as DIR
 PHRASES = os.path.join(DIR, "phrases.txt")
-WISPR_DIR = os.path.expanduser("~/Library/Application Support/Wispr Flow")
+if sys.platform == "win32":  # Electron keeps its data in %APPDATA%\<app name>
+    WISPR_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~"), "Wispr Flow")
+else:
+    WISPR_DIR = os.path.expanduser("~/Library/Application Support/Wispr Flow")
 _WORD = re.compile(r"[a-z0-9']+")
 
 
@@ -108,7 +112,7 @@ def save_phrases(texts: list[str]) -> dict:
                 seen.add(line.lower())
                 phrases.append(line)
     os.makedirs(DIR, exist_ok=True)
-    with open(PHRASES, "w") as f:
+    with open(PHRASES, "w", encoding="utf-8") as f:
         f.write("\n".join(phrases) + "\n")
     added = suggest_words(phrases)
     return {"phrases": len(phrases), "words": sum(len(words_of(p)) for p in phrases), "new_names": added}
@@ -128,7 +132,7 @@ def suggest_words(phrases: list[str], min_count: int = 3) -> list[str]:
     new = [w for w, n in caps.most_common(200)
            if n >= min_count and lower[w.lower()] < n and w.lower() not in have]
     if new:
-        with open(vocab.PATH, "a") as f:
+        with open(vocab.PATH, "a", encoding="utf-8") as f:
             f.write("\n# from your Wispr Flow history (delete any that are wrong)\n" + "\n".join(new) + "\n")
     return new
 
@@ -140,7 +144,7 @@ class Personal:
     def __init__(self, path: str = PHRASES):
         self.phrases: list[str] = []
         if os.path.exists(path):
-            self.phrases = [l.strip() for l in open(path) if l.strip()]
+            self.phrases = [l.strip() for l in open(path, encoding="utf-8") if l.strip()]
         self.uni, self.bi = Counter(), Counter()
         self.index = []
         for p in self.phrases:

@@ -1,6 +1,8 @@
 import time
 
-import Quartz
+import pytest
+
+Quartz = pytest.importorskip("Quartz")  # macOS key listener; the shared timing is in test_ptt.py
 
 from lipflow import hotkey
 from lipflow.hotkey import KEYS, PushToTalk

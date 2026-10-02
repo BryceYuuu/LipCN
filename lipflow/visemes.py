@@ -8,6 +8,7 @@ eligible, so ordinary words ("my", "tool") are never swapped.
 """
 from __future__ import annotations
 
+import os
 import re
 
 # digraphs first, then single letters → viseme class
@@ -46,8 +47,13 @@ def is_word(w: str) -> bool:
     if _DICT is None:
         try:
             _DICT = {l.strip() for l in open("/usr/share/dict/words") if l[:1].islower()}
-        except OSError:
-            _DICT = set()
+        except OSError:  # Windows: the same list (web2, 1934, public domain) ships with Lipflow
+            import gzip
+            path = os.path.join(os.path.dirname(__file__), "data", "web2-lower.txt.gz")
+            try:
+                _DICT = set(gzip.open(path, "rt", encoding="utf-8").read().split())
+            except OSError:
+                _DICT = set()
     w = w.lower().replace("'", "")
     if w in _DICT:
         return True

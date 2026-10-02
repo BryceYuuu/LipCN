@@ -1,13 +1,16 @@
 """What you're typing into: app, window title, and the text around the cursor.
 
-Read once, locally, through the Accessibility API when you press the push-to-talk key (the app
-you're dictating into is frontmost at that moment). Only names and terms are pulled out, to help
-with the words lip reading gets wrong most often — who you're writing to, the thread you're in.
+Read once, locally, through the Accessibility API (on Windows, just the window title) when you
+press the push-to-talk key (the app you're dictating into is frontmost at that moment). Only names
+and terms are pulled out, to help with the words lip reading gets wrong most often — who you're
+writing to, the thread you're in.
 Nothing is saved to disk or sent anywhere.
 """
 from __future__ import annotations
 
+import os
 import re
+import sys
 from dataclasses import dataclass, field
 
 _STOP = set("""a an the and or but if of to in on at for with from by as is are was were be been am i
@@ -57,10 +60,39 @@ def extract_names(*texts: str, limit: int = 30) -> list[str]:
     return out[:limit]
 
 
+def _capture_windows(ctx: Context) -> Context:
+    """Windows: the foreground window's title and program name. Text near the cursor would need
+    UI Automation, so names come from the title only (e.g. a chat or document name)."""
+    import ctypes
+    from ctypes import wintypes
+    user32, kernel32 = ctypes.WinDLL("user32"), ctypes.WinDLL("kernel32")
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return ctx
+    buf = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(hwnd, buf, 512)
+    ctx.title = buf.value
+    pid = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    proc = kernel32.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if proc:
+        size = wintypes.DWORD(1024)
+        path = ctypes.create_unicode_buffer(1024)
+        if kernel32.QueryFullProcessImageNameW(proc, 0, path, ctypes.byref(size)):
+            ctx.app = os.path.splitext(os.path.basename(path.value))[0]
+        kernel32.CloseHandle(proc)
+    ctx.names = extract_names(ctx.title)
+    return ctx
+
+
 def capture(max_chars: int = 600) -> Context:
     """Snapshot of the frontmost app. Never raises: context is a bonus, not a requirement."""
     ctx = Context()
     try:
+        if sys.platform == "win32":
+            return _capture_windows(ctx)
         from AppKit import NSWorkspace
         from ApplicationServices import AXUIElementCreateApplication
         app = NSWorkspace.sharedWorkspace().frontmostApplication()

@@ -3,7 +3,7 @@
 **Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
 text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
 
-Everything runs locally on your Mac. An optional LLM pass fixes the words lip reading gets wrong.
+Everything runs locally on your Mac or Windows PC. An optional LLM pass fixes the words lip reading gets wrong.
 
 ```
  hold ⌥ (right)  ──►  webcam  ──►  face landmarks (live)  ──►  mouth crops, 25 fps
@@ -43,6 +43,39 @@ Everything personal (clips, phrases, trained models) lives in
 To start Lipflow at login: System Settings → General → Login Items → add Lipflow. Logs are in
 `~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
 macOS asks for permissions in the terminal's name.
+
+### Windows
+
+Needs Windows 10 or 11 (64-bit) and about 3 GB of disk. In PowerShell:
+
+```powershell
+git clone https://github.com/amywork777/lipflow.git $HOME\code\lipflow
+cd $HOME\code\lipflow
+powershell -ExecutionPolicy Bypass -File setup.ps1   # uv deps, ~1.2 GB of models, Start menu shortcut
+```
+
+Then open **Lipflow** from the Start menu. It lives in the system tray (the pink mouth by the
+clock; click ^ if it's hidden). The first launch opens the same setup as on a Mac, minus
+permissions: your Wispr Flow words, 24 practice sentences, then training on your face.
+
+How it differs from the Mac version:
+
+- **Key:** hold **Right Ctrl** (change it in the tray menu → *Push-to-talk key*: Right Alt / AltGr,
+  Left Alt or Right Shift also work). Double-tap for hands-free and Esc to cancel work the same.
+- **Camera:** if it doesn't come on, turn on Settings → Privacy & security → Camera → *Let desktop
+  apps access your camera*. Pick another camera by number in the tray menu.
+- **Speed:** without an NVIDIA GPU the lip reader runs on the processor, so expect a second or two
+  more per sentence than on a Mac (on an M4 Pro the encoder takes 1.7 s on CPU vs 0.16 s on the
+  GPU), and training on your face takes several times longer. With an NVIDIA card, install the
+  CUDA build of PyTorch: `uv pip install torch --index-url https://download.pytorch.org/whl/cu126`
+  (re-run it after `uv sync`, which puts the CPU build back).
+- **Cleanup:** the in-process local model is Mac-only (MLX), so use Claude (`setx ANTHROPIC_API_KEY …`,
+  then restart Lipflow) or [Ollama](https://ollama.com) (`ollama pull qwen3:4b`). Without either,
+  Lipflow uses the offline rules.
+- **Names from context:** taken from the window title only (on a Mac it also reads the text
+  around your cursor). Learning from your corrections is Mac-only for now.
+- **Start with Windows:** tray menu → *Start with Windows*. Your data lives in `%APPDATA%\Lipflow`
+  (log: `Lipflow.log` there). `uv run lipflow doctor` checks the models and camera.
 
 ### Most accurate: whisper mode
 
@@ -148,9 +181,14 @@ errors on your own webcam. That's what the LLM cleanup is for.
 uv run pytest             # the paste test is opt-in: LIPFLOW_TEST_PASTE=1
 ```
 
+On Windows: `setup.ps1 -Samples`, then `uv run pytest`. CI runs the whole Windows setup and reads
+a real clip on every push (`.github/workflows/windows.yml`).
+
 Code map: `lipflow/face.py` (landmarks → mouth crops), `vsr.py` (model), `camera.py`, `hotkey.py`
 (Quartz event tap; pynput's macOS listener crashes on recent macOS), `paste.py`, `hud.py`,
-`cleanup.py`, `app.py` (wiring + menu bar). See `NOTICE` for bundled code and model licensing.
+`cleanup.py`, `app.py` (wiring + menu bar). Windows: `lipflow/win/` (tray app, overlay, setup
+window, pynput key hook, clipboard paste). Shared by both: `ptt.py` (key timing), `dictation.py`,
+`practice.py`. See `NOTICE` for bundled code and model licensing.
 The LRS3-trained weights are for non-commercial research use.
 
 ## License

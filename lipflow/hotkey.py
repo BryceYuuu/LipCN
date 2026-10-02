@@ -1,17 +1,13 @@
-"""Global push-to-talk key via a Quartz event tap (listen-only).
-
-Hold the key to dictate, release to type. Double-tap it to start hands-free mode; tap
-again to stop. Esc cancels the current recording.
+"""Global push-to-talk key on macOS via a Quartz event tap (listen-only). Timing lives in ptt.py.
 
 Needs "Input Monitoring" (and for pasting, "Accessibility") permission for whatever app
 launched lipflow: Lipflow.app, or your terminal.
 """
 from __future__ import annotations
 
-import time
-
 import Quartz
 from .paths import WHO
+from .ptt import DOUBLE_TAP, TAP_MAX, PushToTalkState  # noqa: F401  (re-exported for tests)
 
 KEYS = {
     # name: (keycode, device-specific modifier mask)
@@ -22,21 +18,14 @@ KEYS = {
     "fn": (63, 0x00800000),
 }
 ESC = 53
-DOUBLE_TAP = 0.35  # seconds between taps
-TAP_MAX = 0.25     # a press shorter than this is a tap, not a hold
 
 
-class PushToTalk:
+class PushToTalk(PushToTalkState):
     def __init__(self, key: str, on_start, on_stop, on_cancel):
         if key not in KEYS:
             raise ValueError(f"unknown key {key!r}; choose from {', '.join(KEYS)}")
+        super().__init__(on_start, on_stop, on_cancel)
         self.keycode, self.mask = KEYS[key]
-        self.on_start, self.on_stop, self.on_cancel = on_start, on_stop, on_cancel
-        self.down = False
-        self.down_at = 0.0
-        self.last_tap = 0.0
-        self.hands_free = False
-        self.active = False
         self._tap = None
 
     def install(self):
@@ -60,43 +49,13 @@ class PushToTalk:
             return event  # our own typing / paste
         code = Quartz.CGEventGetIntegerValueField(event, Quartz.kCGKeyboardEventKeycode)
         if etype == Quartz.kCGEventKeyDown:
-            if code == ESC and self.active:
-                self.active = self.hands_free = False
-                self.on_cancel()
-            elif self.down and not self.hands_free:
-                # Option+letter is a real shortcut (e.g. typing special characters) — not dictation.
-                self.down = False
-                if self.active:
-                    self.active = False
-                    self.on_cancel()
+            # Option+letter is a real shortcut (e.g. typing special characters), not dictation.
+            self.other_key(code == ESC)
             return event
         if code != self.keycode:
             return event
-        pressed = bool(Quartz.CGEventGetFlags(event) & self.mask)
-        now = time.time()
-        if pressed and not self.down:
-            self.down, self.down_at = True, now
-            if self.hands_free:
-                return event  # stop happens on release
-            if not self.active:
-                self.active = True
-                self.on_start(hands_free=False)
-        elif not pressed and self.down:
-            self.down = False
-            held = now - self.down_at
-            if self.hands_free:
-                self.hands_free = self.active = False
-                self.on_stop()
-            elif held < TAP_MAX:
-                if now - self.last_tap < DOUBLE_TAP:
-                    self.hands_free = True  # second tap: keep listening until the next tap
-                    self.last_tap = 0.0
-                    self.on_start(hands_free=True)
-                else:
-                    self.last_tap = now
-                    self.active = False
-                    self.on_cancel(silent=True)
-            elif self.active:
-                self.active = False
-                self.on_stop()
+        if Quartz.CGEventGetFlags(event) & self.mask:
+            self.key_down()
+        else:
+            self.key_up()
         return event

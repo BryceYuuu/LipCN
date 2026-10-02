@@ -1,0 +1,37 @@
+name: windows
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: |
+            models
+            samples
+          key: models-${{ hashFiles('setup.ps1') }}
+      - name: setup.ps1 (dependencies, models, sample clips, Start menu shortcut)
+        shell: pwsh
+        run: ./setup.ps1 -Samples
+      - name: Shortcut points at the venv's pythonw
+        shell: pwsh
+        run: |
+          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Lipflow.lnk"
+          $t = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
+          Write-Host $t
+          if (-not (Test-Path $t)) { throw "shortcut target missing: $t" }
+      - name: Tests (includes reading a real clip on the CPU)
+        run: uv run pytest -q -rs
+      - name: lipflow doctor (no camera on CI, so this only prints)
+        shell: pwsh
+        run: uv run lipflow doctor; exit 0
+      - name: Lip-read a sample video end to end
+        run: uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic

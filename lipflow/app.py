@@ -30,26 +30,10 @@ from .vsr import LipReader
 from .paths import HOME
 from .paths import WHO
 
-HISTORY = os.path.join(HOME, "history.jsonl")
-SETTINGS = os.path.join(HOME, "settings.json")
-
-
-def load_settings() -> dict:
-    try:
-        return json.load(open(SETTINGS))
-    except (OSError, ValueError):
-        return {}
-
-
-def save_settings(d: dict):
-    os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
-    json.dump(d, open(SETTINGS, "w"), indent=2)
-MIN_SECONDS = 0.6
-MAX_SECONDS = 60.0
-PREVIEW_EVERY = 0.45
-KEEP_CLIPS = 100  # recent dictation clips kept (96x96 grayscale mouth crops, no audio)
-TAIL_SECONDS = 0.4  # keep filming after release: the last word needs the frames after it
-JOIN_WINDOW = 45.0  # dictations this close together get a separating space
+from .dictation import (  # noqa: F401  (onboarding/settings import the settings helpers from here)
+    HISTORY, JOIN_WINDOW, MAX_SECONDS, MIN_SECONDS, PREVIEW_EVERY, SETTINGS, TAIL_SECONDS, clip_problem,
+    keep_clip, load_settings, log_history, rois_for, save_settings, train_on_face,
+)
 
 
 @dataclass
@@ -435,9 +419,7 @@ class Lipflow(NSObject):
 
     @objc.python_method
     def _rois(self, rec: Recording):
-        ts, grays, anchors = rec.snapshot()
-        idx = LipReader.resample(ts, len(ts))
-        return mouth_rois([grays[i] for i in idx], [anchors[i] for i in idx])
+        return rois_for(rec)
 
     @objc.python_method
     def _preview(self, session: int, rec: Recording):
@@ -453,13 +435,7 @@ class Lipflow(NSObject):
     @objc.python_method
     def _final(self, rec: Recording):
         t0 = time.time()
-        problem = None
-        if rec.duration < MIN_SECONDS or len(rec.ts) < 12:
-            problem = ("Too short", "Hold the key while you mouth the words")
-        elif rec.face_ratio < 0.4:
-            problem = ("Can't see your face", "Face the camera with your mouth in view")
-        elif np.std([m for m in rec.mouth_open if m > 0] or [0]) < 0.012:
-            problem = ("No lip movement", "Mouth the words clearly — no sound needed")
+        problem = clip_problem(rec)
         if problem and self.onboarding is not None:
             print(f"[lipflow] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
@@ -521,84 +497,28 @@ class Lipflow(NSObject):
 
     @objc.python_method
     def _save_clip(self, rois, candidates, text):
-        """Keep the mouth crops of recent dictations (local only, last KEEP_CLIPS) so accuracy changes
-        can be measured on your real clips. Off switch in Settings."""
-        if not self.settings.get("save_clips", True):
-            return
-        d = os.path.join(os.path.dirname(HISTORY), "clips", "dictations")
-        os.makedirs(d, exist_ok=True)
-        np.savez_compressed(os.path.join(d, f"{int(time.time() * 1000)}.npz"), rois=rois,
-                            raw=np.array(candidates), text=text)
-        # Only the recent ones are useful (to measure accuracy on your real dictations): keep 100.
-        old = sorted(os.listdir(d))[:-KEEP_CLIPS]
-        for f in old:
-            os.remove(os.path.join(d, f))
+        keep_clip(rois, candidates, text, self.settings)
 
     @objc.python_method
     def _train(self, ob):
         """Onboarding: personal LM (if phrases) then face adaptation with a held-out check."""
-        import random as _r
-        from .bench import wer
-        from .onboarding import N_HELD_OUT, saved_clips
-        from .personal import PHRASES
-        from .train_vsr import finetune, save
         self.loading = True
-        note = ""
-        if os.path.exists(PHRASES):
-            ob.report(3, "Learning how you talk from your phrases…")
-            from .train_lm import train as train_lm
-            try:
-                r = train_lm(epochs=3)
-                note = (f"Your phrasing: {r['before']['yours']:.0f} → {r['after']['yours']:.0f} perplexity. "
-                        if r["saved"] else "")
-            except Exception as e:
-                print(f"[lipflow] train-lm failed: {e}")
-        from . import corrections
-        clips = saved_clips()
-        learned = corrections.load_all()
-        if len(clips) < N_HELD_OUT + 6:
-            ob.finished(0, None, False, "Not enough practice clips to train on. Run setup again from the menu.")
+        r = train_on_face(self.opts.beam, ob.report)
+        if r["after"] is None:
             self.loading = False
+            ob.finished(0, None, False, r["note"])
             return
-        _r.Random(1).shuffle(clips)
-        # held out: practice clips only (their text is certain); corrections only ever train
-        test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:] + learned
-        ob.report(15, f"Measuring the standard model on {len(test)} of your sentences…")
-        base = LipReader(beam_size=self.opts.beam, personal=False)
-
-        def score(reader):
-            e = n = 0
-            for c in test:
-                a, b = wer(reader.beam_search(reader.encode(c["rois"])), c["text"])
-                e, n = e + a, n + b
-            return e / max(n, 1)
-
-        before = score(base)
-        ob.report(25, f"Training on {len(train)} of your clips…")
-        finetune(train, reader=base, log=lambda *a: None,
-                 on_epoch=lambda k, n: ob.report(25 + 65 * k / n, f"Training on your face: pass {k} of {n}"))
-        ob.report(92, "Checking it on the sentences it didn't see…")
-        after = score(base)
-        kept = after < before
-        if kept:
-            save(base)
-        del base
         self.reader = LipReader(beam_size=self.opts.beam)
         self.reader.warmup()
         self.loading = False
-        print(f"[lipflow] onboarding: held-out WER {before:.1%} → {after:.1%} ({'kept' if kept else 'discarded'})")
-        self.settings["training"] = {"before": before, "after": after, "kept": kept, "clips": len(clips),
-                                     "at": time.time()}
+        self.settings["training"] = {"before": r["before"], "after": r["after"], "kept": r["kept"],
+                                     "clips": r["clips"], "at": time.time()}
         save_settings(self.settings)
-        ob.finished(before, after, kept, note)
+        ob.finished(r["before"], r["after"], r["kept"], r["note"])
 
     @objc.python_method
     def _log(self, rec, candidates, text, secs):
-        os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
-        with open(HISTORY, "a") as f:
-            f.write(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "seconds": round(rec.duration, 2),
-                                "raw": candidates, "text": text, "latency": round(secs, 2),
-                                "cleanup": self.cleaner.describe()}) + "\n")
+        log_history(rec, candidates, text, secs, self.cleaner.describe())
 
 
 class AppDelegate(NSObject):
