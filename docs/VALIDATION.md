@@ -1,8 +1,35 @@
-# Validation of experimental Mandarin support
+# Mandarin validation / 中文验证记录
 
-Local validation on 2026-10-02, Apple M4, macOS, Python 3.12.14. This record describes tests actually run; it is not a claim about user-camera accuracy.
+## Fourth iteration: Mandarin visual adaptation and frozen testing / 第四轮中文视觉适配与冻结测试
 
-## Third iteration: public-data adaptation improves CER but remains unusable
+Completed on 2026-10-03, Apple M4 / 16 GiB, Python 3.12.14, Torch 2.14.0, NumPy 1.26.4, OpenCV 4.10.0. The complete bilingual measurements and source hashes are in [MANDARIN_BENCHMARK.md](MANDARIN_BENCHMARK.md); aggregate JSON is in [mandarin-round4-summary.json](benchmarks/mandarin-round4-summary.json). This record distinguishes implementation tests from recognition measurements.
+
+本轮于2026-10-03在Apple M4 / 16 GiB完成。详细实测、全部开发配置和哈希见[中英实测报告](MANDARIN_BENCHMARK.md)，数值汇总见[JSON](benchmarks/mandarin-round4-summary.json)。自动化工程测试与真实视频识别指标分别记录。
+
+- Public data: pinned Chinese-LiPS 1200 original training clips (1105 supported), 100 dev and 100 fresh test clips; separate 40/11/10 speakers. All prior-test speakers were excluded from fresh testing. All 100 test records remain in raw scoring.
+- Training: two completed epochs each for CTC and joint objectives, from the same original weights; selected joint epoch 2. Both epoch-zero baselines match on every raw prediction. Partial third epochs were excluded. Dev-only decoding selected CTC 0.1/reverse 0.3, beam 40, nbest 10, no external LM.
+- Fresh test: A original pipeline 3037/4087 errors (74.31% CER); B selected pipeline 2696/4087 (65.97%); C original weights at B's decoding 3170/4087 (77.56%). Exact sentences 0/100 in every arm; candidate coverage 88%/90%/87%; inference failures 0. Warm p95 timing is reported per arm in the detailed table.
+- Paired statistics: A→B ΔCER −8.34 pp, 95% interval [−10.49,−5.71]; C→B ΔCER −11.60 pp,[−20.50,−5.98]. Percentile bootstrap resamples whole speakers 5000 times, seed 0. No test result selected or retuned the frozen pipeline.
+- Local final suite: 286 passed, 13 skipped in 4.04 s. Skips: two optional CMLR weight checks, one actual paste check, one optional English real-video test, nine Windows-only tests. Previous focused checks emulating cp1252 text I/O: 46 passed, nine Windows-only skipped. External frozen-workflow synthetic checks: nine passed.
+- Windows fixes only update test text I/O to explicit UTF-8 and supply the setup mock's language option. Native Windows automation results are available in the [branch's Actions](https://github.com/BryceYuuu/lipflow/actions?query=branch%3Afeat%2Fmandarin-safe-dictation). No real camera, microphone or cross-app paste was tested in this iteration.
+
+- 公开数据：固定1200条原始训练（1105条支持词表）、100条开发、100条新测试，分别40/11/10位说话者；新测试排除此前测试的全部说话者。测试失败、拒绝和空输出保留在分母。
+- 训练：CTC与联合目标都完成两轮，基线100条原始预测一致，第三轮未完成部分不参与选模。仅开发集选择联合第二轮及CTC 0.1/反向0.3、beam 40、nbest 10、无外部LM。
+- 新测试：原流程CER74.31%→新流程65.97%，相同解码的原权重为77.56%。三组整句正确均0/100，候选覆盖88%/90%/87%，推理失败0。延迟完整列在详细表中。
+- 统计：整体差值−8.34个百分点、95%区间[−10.49,−5.71]；相同解码适配差值−11.60、区间[−20.50,−5.98]。按整名说话者配对bootstrap5000次、seed 0；测试不参与选择或调参。
+- 工程检查：最终本地286通过、13跳过（可选中文权重2、真实粘贴1、可选英文视频1、Windows专用9）。cp1252仿真46通过；冻结工作流合成9通过。真实Windows自动化状态见上面的Actions链接。本轮没有实际摄像头、麦克风或跨应用粘贴测试。
+
+Mandarin results keep per-utterance confirmation. CMLR is the GUI backend; CNVSRC adaptation is a separate research workflow and does not automatically replace it. Public voiced mouth crops and unknown base-pretraining overlap do not establish deliberately silent webcam performance. The declared readiness gates and every failed criterion are retained in the detailed report. Further optimization will address visual training, domain adaptation and independently labelled multi-session silent-camera data.
+
+中文输入逐次确认。CMLR为GUI入口，CNVSRC为独立研究流程，不自动替换产品模型。公开视频口型和未知的基础预训练重叠不能证明刻意无声摄像头效果；详细报告保留全部验收条件与失败项目。后续继续优化视觉训练、领域适配及独立多场次真实无声数据。
+
+## Historical measurements / 历史测量
+
+The dated experiments below document earlier decisions; their test data are not reused as iteration-four acceptance data. PR #4 was closed during those iterations. Current measured results are the fourth-iteration record above.
+
+以下为历史实验，当时状态和数据仅用于追溯，不作为第四轮新测试。旧PR #4在历史阶段关闭。本轮以顶部实测为准。第三轮50条公开测试CER69.82%→67.52%；第二轮8条作者演示的CMLR/CNVSRC CER为98.73%/84.18%，均属于早期诊断。
+
+## Third iteration: fixed public-data CTC adaptation (2026-10-02)
 
 The user deferred camera recording and requested continuing with public data. No physical webcam or microphone was opened. Upstream PR #4 remains closed.
 
@@ -33,9 +60,9 @@ Twelve predeclared global crop/grayscale transforms were run on all eight previo
 
 Third-iteration checks: **199 passed, 10 skipped** in the complete local suite, including English real-video regression and Chinese strict-load/synthetic inference; **79 passed, 1 optional OpenCV skip** in the Python 3.11 minimal-dependency CI subset. Python 3.11/3.12 compilation and `git diff --check` passed. Synthetic collection tests verify that preview text never enters saved images and discard/rollback preserve earlier data. Real camera permission/recording and Windows UI remain unverified. No live audio/camera test is claimed.
 
-## Second iteration: pure visual free-form Mandarin is not ready
+## Second iteration: expanded visual diagnostics (2026-10-02)
 
-The user selected fully silent, freely spoken Mandarin sentences. Upstream PR #4 was closed before this iteration. No new merge request is submitted by this change.
+The user selected fully silent, freely spoken Mandarin sentences. Upstream PR #4 was closed before this iteration. No new merge request was submitted at that stage.
 
 Engineering corrections:
 

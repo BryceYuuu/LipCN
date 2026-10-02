@@ -65,13 +65,13 @@ def test_append_preserves_explicit_session_labels_and_old_video_and_resets_audit
     first = collection.commit(recording(tmp_path), '不要明天发送', 'speaker1', 'real-session1', 'train',
                               label_verified=True, silent_verified=True)
     manifest = tmp_path / 'manifest.json'
-    old = json.loads(manifest.read_text())
+    old = json.loads(manifest.read_text(encoding='utf-8'))
     old['training_overlap_checked'] = True
-    manifest.write_text(json.dumps(old))
+    manifest.write_text(json.dumps(old), encoding='utf-8')
     first_bytes = (tmp_path / first['video']).read_bytes()
     second = collection.commit(recording(tmp_path), '后天再发送', 'speaker1', 'real-session1', 'train',
                                label_verified=True, silent_verified=True)
-    data = json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text(encoding='utf-8'))
     assert len(data['samples']) == 2 and first['id'] != second['id']
     assert {row['session'] for row in data['samples']} == {'real-session1'}
     assert {row['reference'] for row in data['samples']} == {'不要明天发送', '后天再发送'}
@@ -177,7 +177,7 @@ def test_ui_overlay_never_enters_mock_video_and_retakes_never_publish(tmp_path, 
     clock = iter(i * .04 for i in range(50))
     monkeypatch.setattr(collection.time, 'monotonic', lambda: next(clock))
     manifest = collection.collect(tmp_path, 's1', 'same-session', prompts=['不要明天发送'])
-    data = json.loads(manifest.read_text())
+    data = json.loads(manifest.read_text(encoding='utf-8'))
     assert len(data['samples']) == 1 and data['samples'][0]['session'] == 'same-session'
     assert len(Writer.instances) == 2 and not Writer.instances[0].path.exists()
     assert all(np.all(frame == 17) for writer in Writer.instances for frame in writer.frames)

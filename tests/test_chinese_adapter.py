@@ -167,7 +167,7 @@ def test_training_exclusions_and_source_provenance_survive_in_report(tmp_path):
                    'references_modified': False, 'dev_test_filtered': False}
     source = {'revision': 'pinned-author-revision', 'license': 'research only'}
     manifest = tmp_path / 'train.json'
-    manifest.write_text(json.dumps({'training_eligibility': eligibility, 'source': source}))
+    manifest.write_text(json.dumps({'training_eligibility': eligibility, 'source': source}), encoding='utf-8')
     evidence = _manifest_evidence(str(manifest), dataset)
     assert evidence['sample_count'] == 1
     assert evidence['training_eligibility'] == eligibility
@@ -185,14 +185,14 @@ def test_baseline_evidence_is_saved_before_first_training_step(tmp_path, monkeyp
     manifest_paths = {}
     for role in datasets:
         path = tmp_path / f'{role}.json'
-        path.write_text(json.dumps({'source': {'revision': 'source-pin'}}))
+        path.write_text(json.dumps({'source': {'revision': 'source-pin'}}), encoding='utf-8')
         manifest_paths[role] = str(path)
     monkeypatch.setattr(trainer, 'load_manifest', lambda path: datasets[Path(path).stem])
     source = tmp_path / 'source'
     (source / 'datamodule').mkdir(parents=True)
     vocabulary = sorted(set('今天开会明见面周末休息'))
     (source / 'datamodule/char_units.txt').write_text('\n'.join(f'{unit} {index}'
-                                                             for index, unit in enumerate(vocabulary, 1)))
+                                                             for index, unit in enumerate(vocabulary, 1)), encoding='utf-8')
     monkeypatch.setattr(trainer, '_verified_file', lambda *args: 'verified')
     reader = _tiny_reader()
     reader.token_list = ['<blank>', *vocabulary, '<eos>']
@@ -206,7 +206,7 @@ def test_baseline_evidence_is_saved_before_first_training_step(tmp_path, monkeyp
     output = tmp_path / 'run'
 
     def fail_first_loss(*args):
-        baseline = json.loads((output / 'baseline.json').read_text())
+        baseline = json.loads((output / 'baseline.json').read_text(encoding='utf-8'))
         assert baseline['status'] == 'baseline_complete'
         assert baseline['training_started'] is False
         assert baseline['protocol']['epochs'] == 2

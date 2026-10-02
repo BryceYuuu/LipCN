@@ -1,4 +1,8 @@
-# 中文识别与候选确认（实验性）
+# 中文识别与候选确认 / Experimental Mandarin recognition and review
+
+[English guide](#english-guide)
+
+实现状态记录日期：2026-10-02。本页记录产品安装路径和实现边界；后续公开数据研究的最终实测结论以[验证记录](VALIDATION.md)为准。研究模型适配流程见[中英公开数据操作说明](chinese-public-adaptation.md)。
 
 这次扩展提供两种不同的中文输入路径。**当前不应把中文纯唇读用于无人确认的日常输入。**
 
@@ -79,3 +83,84 @@ uv run lipflow file mouth-video.mp4 --language zh --mouth-roi --cleanup basic
 新批量验收按照独立说话者、录制日期和真实摄像头条件检查数据充分性，并统计整句正确率和热运行延迟。使用方式见 [中文纯无声验收流程](CHINESE_EVALUATION.md)。公开嘴部裁剪视频只能作为诊断样本，不能通过真实摄像头可用性验收。
 
 本轮新增 Chinese-LiPS 公开样本获取、固定分区的视觉编码器适配以及人工确认的无声摄像头采集命令。研究权重保留在独立实验目录，不会自动启用；真正无声发音与普通说话/耳语在清单和验收条件中明确区分。操作见[公开数据适配与本地采集](CHINESE_ADAPTATION.md)。
+
+
+## English guide
+
+Implementation snapshot: **2026-10-02**. This page explains product installation and behavior, rather than reporting a later research result. See [validation records](VALIDATION.md) for measured outcomes and the [public-data adaptation guide](chinese-public-adaptation.md) for research training. Unrestricted Mandarin visual dictation requires confirmation; no independent silent-webcam evaluation has established unattended daily-use accuracy.
+
+### Choose the input mode and install its dependencies
+
+| Mode | Input | Model/path | Boundary |
+| --- | --- | --- | --- |
+| Silent Mandarin | Webcam, no audio required | Author-released CMLR visual model and Mandarin character language model | Research use; vocabulary of more than 3,360 Han characters; no mixed English recognition; webcam/cross-dataset accuracy has not met usability targets |
+| Quiet Mandarin | Microphone ASR with webcam quality checks | faster-whisper / Whisper large-v3-turbo, CPU int8 | Audio ASR with visual gating, not a trained Mandarin AVSR fusion model; audible quiet speech or whispering is required; results require review |
+
+Install the base application from the main [README](../README.md), using `./setup.sh` on Mac or `setup.ps1` on Windows. This supplies the webcam face-detection model.
+
+For visual-only Mandarin, read the [author model zoo](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages#model-zoo), [source license](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/blob/master/LICENSE), and [CMLR usage terms](https://www.vipazoo.cn/CMLR.html) before downloading. This adaptation grants no commercial rights. Weights are not distributed in the repository, application package, or pull request.
+
+```bash
+uv sync --extra chinese
+uv run --extra chinese lipflow install-chinese --accept-research-license
+uv run lipflow run --language zh --cleanup basic --confidence-policy review
+```
+
+The visual model download is approximately 400 MB. The installer checks the verified archive SHA256 and writes only the two designated configuration/checkpoint members. Changed archives fail validation; bypassing the hash check is not supported.
+
+Quiet-input mode does not require CMLR weights:
+
+```bash
+uv sync --extra chinese-whisper
+uv run --extra chinese-whisper lipflow run --language zh --input-mode whisper --cleanup basic
+```
+
+Its first launch downloads approximately 1.6 GB of Whisper model data; recognition subsequently runs locally. On Mac, this path uses CPU int8, not MLX/Apple GPU audio inference. The microphone opens only while the input key is held and during finalization. Do not use it for completely silent articulation. Audio results are normalized to simplified Chinese; that normalization is not translation.
+
+The menu exposes language, faithful/polish cleanup, candidate policy, and input mode. These menu settings require restart; CLI arguments take precedence over saved settings. The existing Mac Whisper toggle still controls English AVSR; Mandarin quiet input uses the separate mode above. For an environment outside iCloud, follow the `UV_PROJECT_ENVIRONMENT` instructions in the [research guide](chinese-public-adaptation.md).
+
+### Review candidates before insertion
+
+The default is `--confidence-policy review`. The overlay offers up to three distinct results: a cleanup suggestion, raw recognition, and alternatives. Press 1, 2, or 3 while the overlay has focus; Esc cancels and allows repetition. No global interception of number keys is installed. After selection, the application restores the original input application and checks the target. If that check fails, it copies the selection and requests manual paste.
+
+Mac checks the application PID and original input control. Windows currently checks the window HWND; control/cursor-level UI Automation validation is not implemented. Cursor movement inside the same control while recognition is pending cannot always be detected.
+
+Quality checks use face visibility, mouth width in original-image pixels, and mouth-image brightness/contrast. Poor quality requests a closer position, better lighting, or facing the camera. Missing faces, no lip motion, unknown tokens, and obvious repetition also request retry. These are conservative heuristics, not a detector of every recognition error.
+
+**Mandarin always requires confirmation, including when `--confidence-policy auto` is supplied.** Two decoders can agree on an incorrect sentence. Score margins remain research evidence and cannot unlock Mandarin automatic insertion. English can still opt into its heuristic margin/CTC-agreement/quality policy; a score margin is not a correctness probability.
+
+Local history preserves candidates, scores, token counts, routing reasons, cleanup suggestions, and risk flags for later independent calibration. Unconfirmed text is not added to input history/context.
+
+### Apply the same cleanup boundaries to every backend
+
+Local models, Claude, and Ollama pass through the same output checks. Changes to numbers, dates, times, amounts, configured names/terms, or negation require confirmation. Faithful mode also checks words outside the candidate evidence and large edits. Wording changes in polish mode require review. Punctuation and deterministically equivalent English number formatting can be handled normally.
+
+These rules do not prove semantic equivalence. Unconfigured names, moved negation with unchanged counts, and complex amounts can still evade a check. A small local model may reject a suggestion and fall back to basic formatting. Raw recognition remains available in the overlay, history, and the “Copy raw recognition” menu; the menu copies it rather than blindly rewriting a document that the user has edited.
+
+`--cleanup basic` avoids text LLM calls entirely. The existing `auto` backend can choose cloud Claude if Anthropic credentials are present. Selecting an explicit backend or basic formatting makes the text-processing path clear.
+
+### Understand Mandarin training and context handling
+
+The Mandarin practice flow contains 60 project-authored everyday sentences and samples 24 per round. Clips use `clips/onboarding/zh/`; personal face parameters use `models/zh/vsr_face.pth`, separate from English. Targets follow the model's character vocabulary and reject unsupported English/Arabic digits instead of silently dropping Chinese text. The practice trainer retains its held-out check.
+
+Mandarin does not load an English personal language model; `train-lm` remains an English tool. Chinese history supports character-level phrase retrieval/reranking. Context extracts names only from explicit recipient/private-chat title markers, not arbitrary body text. Custom Mandarin vocabulary can match inside sentences without applying English lip-shape substitution rules. Automatic Mandarin correction examples use conservative character alignment; Windows still lacks automatic correction capture.
+
+Personal retraining requires enough genuine user recordings. This implementation does not establish that 24 practice sentences improve personal Mandarin accuracy or generalize across dates and lighting.
+
+### Process videos and reproduce evaluation
+
+For a full-face video:
+
+```bash
+uv run lipflow file face-video.mp4 --language zh --cleanup basic
+```
+
+For an already aligned 96×96 mouth crop, pass `--mouth-roi`; otherwise face detection will treat the crop incorrectly:
+
+```bash
+uv run lipflow file mouth-video.mp4 --language zh --mouth-roi --cleanup basic
+```
+
+`scripts/evaluate_chinese.py` reports raw CER, latency, and candidate evidence. See [the acceptance protocol](CHINESE_EVALUATION.md) for independent speakers, sessions, and real silent-webcam requirements. Public mouth crops are diagnostic evidence, not a substitute for that acceptance set. No other person's recordings or unauthorized dataset clips are bundled here.
+
+[Public-data adaptation and optional local capture](CHINESE_ADAPTATION.md) explains the historical pilot and manual capture utility; the [current research workflow](chinese-public-adaptation.md) explains train/dev-only selection, resumed training, and frozen A/B/C comparisons. Research adapters remain in separate experiment directories and are never automatically activated. Voiced, whispered, and truly silent articulation remain distinct in manifests and acceptance checks.

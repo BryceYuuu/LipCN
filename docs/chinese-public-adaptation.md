@@ -1,4 +1,8 @@
-# 中文公开数据适配：只用 train/dev 选择，再冻结测试
+# 中文公开数据适配 / Chinese public-data adaptation
+
+[中文操作说明](#数据权重和运行环境) · [English guide](#english-guide)
+
+只用 train/dev 选择，再冻结测试。 / Select on train/dev, then freeze before testing.
 
 本流程用于优化**纯视觉、自由中文句子**识别。训练和选参工具不读取 test；摄像头录制不属于本流程。公开说话视频中的嘴部图像可以用于研究，但不能证明刻意无声发音已经可用。本页不新增准确率或产品可用性结论。
 
@@ -19,6 +23,19 @@
 | 字符词表 SHA256 | `635e12ebb5f7dcd60637a4f3c329cd543f1e0e34aa4a6d62ba87185c3666aae0` |
 
 以下命令从仓库根目录运行，假定已有包含项目依赖的 `.venv` 和本地作者文件。优先复用已下载权重；变量中的路径需要按本机情况替换。视频、运行缓存和权重放在非 Git 目录，输出目录使用新的名字。
+
+优先使用持久的非 iCloud 路径保存源码、Python 环境、权重、视频和实验记录，例如 macOS 的 `~/Library/Caches/lipflow-research` 或 `~/.cache/lipflow-research`。iCloud 占位文件可能在读取时等待下载；`/tmp` 也可能被系统清理，均不适合唯一的断点恢复副本。开始长实验前确认数据已在本地完整落盘，冻结使用的源码并保留可恢复的备份。
+
+使用 uv 时，可以在安装项目依赖前设置环境位置。下面从完整的本地仓库根目录运行；原有命令里的 `.venv/bin/python` 应相应替换为 `"$LIPFLOW_PYTHON"`。已有验证环境可以直接指定解释器，无需重新安装或改变正在运行的实验：
+
+```bash
+LIPFLOW_WORK_ROOT="$HOME/Library/Caches/lipflow-research"
+mkdir -p "$LIPFLOW_WORK_ROOT"
+export UV_PROJECT_ENVIRONMENT="$LIPFLOW_WORK_ROOT/venv"
+uv sync --python 3.11
+LIPFLOW_PYTHON="$UV_PROJECT_ENVIRONMENT/bin/python"
+```
+
 
 ```bash
 LIPFLOW_RESEARCH_CHECKPOINT=/local/model_avg_cncvs_2_3_cnvsrc.pth
@@ -122,7 +139,7 @@ CNVSRC 字符词表固定。训练目标含不支持的字符时，应记录并�
 
 恢复前核对数据清单、基座/作者源码/词表/配置、训练协议、指定设备、列明的本地实现文件和 Python/PyTorch/NumPy/OpenCV 版本；不一致时拒绝继续。参数、优化器张量与最佳适配器也需通过形状、dtype、有限值及来源检查。恢复从上次完整 epoch 的下一轮开始，不重跑 epoch 0。中断的半轮更新全部丢弃；它们的步骤数可以留在诊断报告中，但不能参加模型选择。
 
-`active_budget.json` 在训练步骤边界和正常退出时记录累计活动用时。恢复采用恢复状态与预算台账中的较大值，保留此前已消耗的预算，不会因重启重新获得 1800 秒；程序停机期间及重新加载模型的时间不计入活动预算。强制杀进程或断电可能丢失最后一次台账更新之后的少量用时，报告中保留这项限制。预算已耗尽时，恢复也不会再完成新的训练轮。
+`active_budget.json` 在训练步骤边界和正常退出时记录累计活动用时。恢复采用恢复状态与预算台账中的较大值，保留此前已消耗的预算，不会因重启重新获得 1800 秒；程序停机期间及重新加载模型的时间不计入活动预算。强制杀进程或断电可能丢失最后一次台账更新之后的全部活动用时，包括长训练步或正在进行的完整 dev 评测；这段时间不保证很短，不能将台账视为硬退出情况下的完整计时。报告中保留这项限制。预算已耗尽时，恢复也不会再完成新的训练轮。
 
 ## 只在 dev 比较解码，再冻结完整配置
 
@@ -246,3 +263,270 @@ B 为 epoch 0 时去掉 `--adapter`，并复用它与 C 的相同报告；不能
 CER 按 NFKC/casefold 后的 Unicode 字母与数字计算，忽略空白、标点；金额数字仍保留，繁简汉字保持不同，不翻译、不做 LLM 润色。CER 是编辑错误率，beam 分数和候选覆盖也不是正确概率。
 
 新测试说话人与本轮训练/开发、旧已查看测试分离，可以减少本轮选参泄漏，但基座预训练重叠仍未完整审计。`training_overlap_checked` 不能仅因哈希或本轮说话人分离就设成 true。公开视频为普通发声口型，嘴部裁剪缺少真实摄像头环境和刻意无声发音证据；即使 CER 改善，也不能解除实验状态或声称纯无声中文自由输入达到可用标准。实际本轮测量留在独立 JSON/报告中，不用命令示例替代。
+
+
+## English guide
+
+This workflow adapts an existing model for **visual-only recognition of unrestricted Mandarin sentences**. Training and decoder selection use train/dev only. Every input to the visual model is a mouth video; audio, OCR, translated English predictions, and LLM rewriting are excluded from this experiment. Public videos of normally voiced speech provide useful visual evidence, but they do not establish deliberate silent articulation or webcam dictation accuracy. This guide describes procedures and safeguards, not a new accuracy or usability result.
+
+### Sources, licenses, and a durable local environment
+
+The dataset is [BAAI/Chinese-LiPS](https://huggingface.co/datasets/BAAI/Chinese-LiPS), pinned to revision `db96948538811029011eee44602438a26710ecd9`, under CC-BY-NC-SA-4.0. The [author paper](https://arxiv.org/abs/2504.15066) explains how the reference text was obtained. The downloader uses the authors' labels; it does not independently verify every character in every clip.
+
+The base visual model uses [CNVSRC2025 VSR author code](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR) and the [official checkpoint](https://huggingface.co/ReflectionL/CNVSRC2025Baseline). Read the author's [VSR/LICENSE](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE) before enabling the research reader. These artifacts and derived weights are restricted to the allowed noncommercial comparative research. The scripts do not install an adapter into the GUI, enable automatic Mandarin pasting, or grant deployment rights.
+
+The research loader verifies the following identities before loading the complete checkpoint with `weights_only=True`, exact state keys, and tensor shape checks:
+
+| Artifact | Pinned identity |
+| --- | --- |
+| Author source revision | `e5c4454016ba4eef9e586e77dd58e8981bb5c3e1` |
+| Checkpoint revision | `b16f238d0df860da7e3b9834f959780b1d388f44` |
+| Checkpoint SHA256 | `577cd9558eea111683a406bc25d69c7161cdb79534c2273fc0d0f044c356231c` |
+| Configuration SHA256 | `b0464bcac797a2bafd98102d8ddaf041c6c9957b52566e5019c2a43de6860a04` |
+| Character vocabulary SHA256 | `635e12ebb5f7dcd60637a4f3c329cd543f1e0e34aa4a6d62ba87185c3666aae0` |
+
+Run commands from a fully available local repository checkout. Prefer durable storage outside iCloud for the checkout, environment, author files, datasets, and run records. An iCloud placeholder may block a read while downloading; `/tmp` can be cleaned by the operating system. Neither should hold the only recovery copy of a long experiment. Keep large weights and videos outside Git and preserve a backup of the frozen source and run artifacts.
+
+With uv, an external environment can be selected before installing dependencies. The macOS example below uses a cache directory; Linux users can use `$HOME/.cache/lipflow-research` instead. Reuse an already validated environment when available rather than changing dependencies during a run.
+
+```bash
+LIPFLOW_WORK_ROOT="$HOME/Library/Caches/lipflow-research"
+mkdir -p "$LIPFLOW_WORK_ROOT"
+export UV_PROJECT_ENVIRONMENT="$LIPFLOW_WORK_ROOT/venv"
+uv sync --python 3.11
+LIPFLOW_PYTHON="$UV_PROJECT_ENVIRONMENT/bin/python"
+
+LIPFLOW_RESEARCH_CHECKPOINT=/local/model_avg_cncvs_2_3_cnvsrc.pth
+LIPFLOW_RESEARCH_SOURCE=/local/CNVSRC2025
+LIPFLOW_PRIOR_TEST=/local/previous-chinese-lips/test.json
+LIPFLOW_DATA="$LIPFLOW_WORK_ROOT/chinese-lips-round4"
+LIPFLOW_RUN="$LIPFLOW_WORK_ROOT/chinese-lips-round4-runs"
+```
+
+Replace `/local/...` with existing author files and the previous test manifest. If using the repository's `.venv` instead, set `LIPFLOW_PYTHON=.venv/bin/python`. Fresh experiment directories must not overwrite earlier runs.
+
+### Reserve new test speakers before selecting anything
+
+An inspected test set cannot remain the independent acceptance set for subsequent development. Fix the sampling seed, requested counts, and speaker counts in advance. Exclude **all** speakers from the prior test, regardless of their recognition quality. The following is a reproducible example; its counts are not a claim about the currently running experiment.
+
+```bash
+"$LIPFLOW_PYTHON" scripts/fetch_chinese_lips.py \
+  --accept-noncommercial-license \
+  --output-dir "$LIPFLOW_DATA" \
+  --seed lipflow-chinese-lips-round4 \
+  --train-count 180 --train-speakers 12 \
+  --dev-count 30 --dev-speakers 6 \
+  --test-count 50 --test-speakers 10 \
+  --exclude-test-manifest "$LIPFLOW_PRIOR_TEST" \
+  --max-download-mb 500
+```
+
+The exclusion manifest must come from the same pinned dataset revision, with speaker identities consistent with the source IDs. Exclusion uses identities, not predictions. The downloader records its hash and excluded speakers, selects members by a deterministic seed hash, and checks official train/dev/test speaker separation. Insufficient independent speakers are an error; the tool does not reuse the old test as a fallback.
+
+HTTP Range requests retrieve selected ZIP members under an explicit quota. A server that ignores ranges causes failure instead of an automatic full-archive download. The tool checks metadata hashes, member CRCs, and local video SHA256 values; it cannot claim verification of a full ZIP SHA256 when the full archive was never downloaded. Seal the new `test.json`: neither training, epoch selection, nor decoder search may use it. Further development after inspecting its results needs a new independent test protocol.
+
+### Keep labels intact; exclude unsupported training clips explicitly
+
+The CNVSRC vocabulary is fixed. If a train reference contains an unsupported character, exclude and record the **entire training clip**. Do not delete characters, substitute names, alter amounts, or rewrite the reference to fit the vocabulary.
+
+```bash
+"$LIPFLOW_PYTHON" scripts/prepare_chinese_training.py \
+  --manifest "$LIPFLOW_DATA/train.json" \
+  --vocabulary "$LIPFLOW_RESEARCH_SOURCE/VSR/datamodule/char_units.txt" \
+  --exclude-unsupported-training-samples \
+  --output "$LIPFLOW_DATA/train-supported.json"
+```
+
+The preparation tool rejects dev/test and existing output files. It keeps selected references unchanged, records excluded IDs/characters and input hashes, and leaves the original manifest untouched. **Every dev/test sample and reference character remains in scoring**, including out-of-vocabulary characters. Applying a train exclusion rule to evaluation would bias the result.
+
+### Compare CTC and joint adaptation against epoch zero
+
+[train_chinese_joint_adapter.py](../scripts/train_chinese_joint_adapter.py) accepts train/dev only. General adaptation requires separate speakers, content, and video identities; personal adaptation also requires independent real recording sessions. Before training, it evaluates the full dev set at epoch zero and writes `baseline.json`, `protocol.json`, and `report.json`.
+
+Run both prespecified objectives independently from the verified base, with the same schedule and separate outputs. Do not choose losses, layers, rates, or epochs using test labels.
+
+```bash
+"$LIPFLOW_PYTHON" scripts/train_chinese_joint_adapter.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --train-manifest "$LIPFLOW_DATA/train-supported.json" \
+  --dev-manifest "$LIPFLOW_DATA/dev.json" \
+  --scope general --loss ctc \
+  --epochs 6 --last-layers 2 --learning-rate 0.00001 \
+  --beam-size 40 --ctc-weight 0.5 --seed 0 --max-seconds 1800 \
+  --output "$LIPFLOW_RUN/ctc"
+
+"$LIPFLOW_PYTHON" scripts/train_chinese_joint_adapter.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --train-manifest "$LIPFLOW_DATA/train-supported.json" \
+  --dev-manifest "$LIPFLOW_DATA/dev.json" \
+  --scope general --loss joint \
+  --epochs 6 --last-layers 2 --learning-rate 0.00001 \
+  --beam-size 40 --ctc-weight 0.5 --seed 0 --max-seconds 1800 \
+  --output "$LIPFLOW_RUN/joint"
+```
+
+Only the requested final visual encoder blocks and output normalization are trainable. The visual frontend, CTC head, forward/reverse decoder parameters, and all BatchNorm statistics remain frozen. Frozen decoders still allow gradients to reach the visual encoder. Each step prepares one clip; the whole training image set is not cached in RAM.
+
+CTC uses the complete target, normalizes loss by reference token count, and checks the frame requirement for repeated tokens. Invalid targets are not hidden with `zero_infinity`. Joint adaptation uses:
+
+```text
+L = 0.1 * CTC + 0.9 * (0.7 * forward_attention + 0.3 * reverse_attention)
+```
+
+Attention terms use the base model's label smoothing and are normalized per output token, including EOS. Reversed reference targets are allowed only in labeled **train** teacher forcing. This adaptation normalization is explicit; it is not a claim that its scalar loss equals every term in the author's original training procedure.
+
+Choose the earliest completed epoch with strictly lower full-dev raw CER, subject to nondecreasing candidate coverage and exact-sentence rate and no baseline/candidate inference failures. Ties keep the earlier choice. Partial epochs are never selected. If nothing passes, retain epoch zero and produce no eligible adapted artifact. Saved adapters contain only the allowed encoder parameters, base binding, and metadata; loading validates the complete allowed parameter set, source, shapes, dtypes, and finite values before changing the model.
+
+The 1800-second limit is a **soft** active-time budget beginning at training, including subsequent full-dev evaluations but excluding initial model loading and epoch-zero evaluation. It is checked before training steps. A current step or full-dev evaluation may overrun it; report actual elapsed time and overrun rather than claiming a hard cap.
+
+### Resume a committed complete epoch without resetting the budget
+
+After epoch zero, `training_resume.pth` is written atomically; it is updated after a complete training epoch and full-dev evaluation. It contains the boundary's current trainable parameters, AdamW state, training order, Python/NumPy/PyTorch and device RNG states, committed selection report, and cumulative active budget. The selected adapter also has an immutable `encoder_adapter_epochN.pth` boundary file and an atomically published `encoder_adapter.pth`.
+
+Resume only an output directory with a valid recovery state. Add `--resume` to the **same command**, retaining every protocol argument. For the joint example:
+
+```bash
+"$LIPFLOW_PYTHON" scripts/train_chinese_joint_adapter.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --train-manifest "$LIPFLOW_DATA/train-supported.json" \
+  --dev-manifest "$LIPFLOW_DATA/dev.json" \
+  --scope general --loss joint \
+  --epochs 6 --last-layers 2 --learning-rate 0.00001 \
+  --beam-size 40 --ctc-weight 0.5 --seed 0 --max-seconds 1800 \
+  --resume --output "$LIPFLOW_RUN/joint"
+```
+
+Resume checks manifests, base/source/vocabulary/configuration identities, protocol, requested device, listed local implementation files, and Python/PyTorch/NumPy/OpenCV versions. It validates parameters and optimizer tensor shapes/dtypes/finite values and the selected adapter hash. Mismatches are rejected. It continues at the next complete epoch without rerunning epoch zero. Partial-epoch parameter updates are discarded; diagnostic step counts do not make them selectable. A newly published but uncommitted adapter from an interrupted transaction does not replace the committed choice.
+
+`active_budget.json` is updated at training-step boundaries and normal exit. Resume carries the larger elapsed value from the recovery state and budget ledger. Restarting does not grant another 1800 seconds; idle downtime and reload time are excluded. **A hard kill or power loss may omit all active time since the last ledger update, including a long step or an ongoing full-dev evaluation. That interval is not guaranteed to be short.** The ledger is therefore not a complete hard-exit timer. An exhausted recorded budget permits no further completed training epoch.
+
+### Select decoding on dev and freeze the full configuration
+
+[compare_chinese_decoders.py](../scripts/compare_chinese_decoders.py) rejects train, test, heldout, and test rows hidden in a dev manifest. Each clip is visually encoded once and cached in memory. Neither the frame reader nor the decoders receive reference text. Each serial search creates fresh beam/CTC scorers and clears encoder-memory attention projections.
+
+```bash
+"$LIPFLOW_PYTHON" scripts/compare_chinese_decoders.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --manifest "$LIPFLOW_DATA/dev.json" \
+  --adapter "$LIPFLOW_RUN/joint/encoder_adapter.pth" \
+  --ctc-weights 0.1 0.3 0.5 0.7 \
+  --beam-size 40 --nbest 10 --reverse-weight 0.3 \
+  --cache-max-mib 256 --pure-ctc-max-workspace-mib 1024 \
+  --output "$LIPFLOW_RUN/joint-dev-decoding.json"
+```
+
+Include `--adapter` only when that run actually saved an eligible artifact; remove it for epoch zero. The default grid is `[0.1, 0.3, 0.5, 0.7, 1.0]`. The 16 GB example above prespecifies omission of `1.0`: pure CTC disables prebeam and expands full-vocabulary prefix workspace. Record this resource decision before inference; do not remove a poorly scoring configuration afterward.
+
+When CTC `1.0` is included, the estimated workspace is `6 * encoded_frames * 2 * beam_size * vocabulary_size * dtype_bytes`. Above the explicit budget, the decoder is not invoked: the row records `resource_limited`, its estimate/budget, and a blank output while remaining in every denominator. The 256 MiB encoding cache and 1024 MiB workspace estimate are separate budgets, not a bound on total process memory. A smaller prespecified dev set or changed resource protocol must be recorded explicitly.
+
+The helper selects the base CTC weight by lowest **top-1 raw dev CER**, breaking ties by ascending weight, and evaluates reverse rescoring only for that base. It saves all configurations. Its minimum-CER choice does **not** itself enforce coverage/exact/failure gates relative to CTC `0.5`, reverse `0`; the freezing workflow must enforce them separately: strictly lower full-dev CER, no coverage or exact-sentence decline, and no baseline/candidate inference failures. Otherwise retain the original configuration.
+
+Reverse teacher forcing uses reversed **candidate body token IDs**, then the original EOS, with the original SOS at the input start. Only encoded images and candidates enter this computation. The score is:
+
+```text
+S_new = S_beam + (1 - ctc_weight) * reverse_weight * (S_reverse - S_forward)
+```
+
+Both attention terms are unweighted sequence log scores. This replaces a forward attention share while retaining beam score scale and CTC contribution; no score softmax is interpreted as correctness probability, and reference length is not used. Keep original `beam_score` and rescored `score`. Reference-based n-best oracle CER is a **diagnostic of the candidate space only**, never a selection rule or an output available to a real user.
+
+At the default maximum of one decoding step per encoded frame, ESPnet appends an unscored EOS in the final loop. A hypothesis can consequently have two trailing EOS tokens. The helper strips trailing EOS from rendered text/body while retaining the original token sequence, termination evidence, trailing-EOS count, and scores. If **any hypothesis in the full returned beam** is force-ended, reverse rescoring is skipped for the entire utterance, even when that hypothesis is beyond retained n-best. Original scores and ordering remain unchanged; forced endings are not mixed with teacher-forced EOS scores.
+
+Quality and CTC greedy text are calculated once per clip and reused. All configurations use the shared `confidence.assess(policy='review', language='zh')`: unknown tokens, poor visual quality, or repetitive output can produce `retry`. Raw retry predictions still contribute to CER; clearing or polishing them cannot improve the metric. Mandarin continues to require user review.
+
+Each configuration's reported latency includes the full preparation/encoding cost plus its own decoding, with extra reverse time where applicable. Actual comparison wall time shares encoding; dividing it by configuration count is not an independent end-to-end latency measurement. Startup/warmup are separate.
+
+Before reading any new test predictions, freeze source commit, data/adapter/base hashes, objective and epoch, CTC/reverse weights, beam, n-best, length bonus, normalization, license, and resource restrictions. Keep reverse weight zero if rescoring fails the dev gate and epoch zero if no adaptation passes.
+
+### Evaluate the frozen A/B/C arms on the same new test
+
+[evaluate_cnvsrc.py](../scripts/evaluate_cnvsrc.py) runs a single supplied configuration. It performs no grid search or parameter selection from test results. All arms use the identical complete test manifest and preprocessing, beam 40, n-best 10, length bonus zero, and no external LM.
+
+| Arm | Visual model | Decoder | Purpose |
+| --- | --- | --- | --- |
+| A | Original base | CTC 0.5, reverse 0 | Prespecified original pipeline |
+| B | Dev-selected adapter; original base if none passes | Dev-selected and gated frozen decoder | Final candidate pipeline |
+| C | Original base | Exactly the decoder used by B | Isolate model adaptation under equal decoding |
+
+A→B measures the total pipeline change. C→B isolates model change with identical decoding. If C equals A or B, reuse the corresponding report rather than rerunning and selecting a favorable result. The values below are **examples**, not a current selection; replace them with the frozen values.
+
+```bash
+LIPFLOW_FINAL_CTC=0.5
+LIPFLOW_FINAL_REVERSE=0.0
+LIPFLOW_FINAL_ADAPTER=/local/chosen-run/encoder_adapter.pth
+
+"$LIPFLOW_PYTHON" scripts/evaluate_cnvsrc.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --beam-size 40 --ctc-weight 0.5 \
+  --reverse-weight 0.0 --nbest 10 \
+  --output "$LIPFLOW_RUN/frozen-A-original-test.json"
+
+"$LIPFLOW_PYTHON" scripts/evaluate_cnvsrc.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --adapter "$LIPFLOW_FINAL_ADAPTER" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --beam-size 40 --ctc-weight "$LIPFLOW_FINAL_CTC" \
+  --reverse-weight "$LIPFLOW_FINAL_REVERSE" --nbest 10 \
+  --output "$LIPFLOW_RUN/frozen-B-pipeline-test.json"
+
+"$LIPFLOW_PYTHON" scripts/evaluate_cnvsrc.py \
+  --accept-research-license \
+  --checkpoint "$LIPFLOW_RESEARCH_CHECKPOINT" \
+  --source-dir "$LIPFLOW_RESEARCH_SOURCE" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --beam-size 40 --ctc-weight "$LIPFLOW_FINAL_CTC" \
+  --reverse-weight "$LIPFLOW_FINAL_REVERSE" --nbest 10 \
+  --output "$LIPFLOW_RUN/frozen-C-same-decoder-base-test.json"
+```
+
+For epoch-zero B, remove `--adapter` and reuse its report for C. When B's decoder matches A, reuse A for C. Never enable an adapter that failed dev gates just to produce an adapted test result. Exit code 2 means the declared research acceptance thresholds were not met; it usually does not mean the model crashed. Failed, empty, and out-of-vocabulary cases all remain in CER denominators.
+
+### Compare stored reports with the frozen manifest
+
+[compare_chinese_reports.py](../scripts/compare_chinese_reports.py) performs no inference. Pass the frozen test manifest so it can verify that every intended sample appears exactly once, with matching references, speakers, video hashes, sessions, and other declared identities. Comparing two equally incomplete reports without the manifest would not establish coverage of the intended test.
+
+```bash
+"$LIPFLOW_PYTHON" scripts/compare_chinese_reports.py \
+  "$LIPFLOW_RUN/frozen-A-original-test.json" \
+  "$LIPFLOW_RUN/frozen-B-pipeline-test.json" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --seed 0 --resamples 5000 \
+  --output "$LIPFLOW_RUN/frozen-A-to-B-paired.json"
+
+"$LIPFLOW_PYTHON" scripts/compare_chinese_reports.py \
+  "$LIPFLOW_RUN/frozen-C-same-decoder-base-test.json" \
+  "$LIPFLOW_RUN/frozen-B-pipeline-test.json" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --seed 0 --resamples 5000 \
+  --output "$LIPFLOW_RUN/frozen-C-to-B-paired.json"
+```
+
+If an arm was reused, supply the actual reused path. Deltas are B minus the baseline; negative CER differences mean fewer raw edit errors. The 95% interval resamples whole speakers 5,000 times with seed zero, pooling character counts before calculating CER each time. Reports preserve per-speaker outcomes and hashes of both reports and the manifest. Few speakers, common recording conditions, or unknown pretraining overlap limit the interval's interpretation. It does not establish silent-webcam usability or permit test-driven reselection.
+
+For an offline breakdown of stored errors, without rerunning videos or generating corrected text:
+
+```bash
+"$LIPFLOW_PYTHON" scripts/analyze_chinese_errors.py \
+  "$LIPFLOW_RUN/frozen-B-pipeline-test.json" \
+  --manifest "$LIPFLOW_DATA/test.json" \
+  --vocabulary "$LIPFLOW_RESEARCH_SOURCE/VSR/datamodule/char_units.txt" \
+  --output "$LIPFLOW_RUN/frozen-B-pipeline-errors.json"
+```
+
+### Interpret results within their measured domain
+
+Raw CER uses NFKC/casefold Unicode letters and numbers, ignoring spaces and punctuation. Digits in monetary amounts remain; traditional and simplified Han characters remain distinct. No translation or LLM cleanup is applied. CER is an edit error rate; beam scores, candidate coverage, and decoder agreement are not calibrated probabilities.
+
+New test speakers are separate from this adaptation's train/dev and the previously inspected test. This reduces current selection leakage, but base-model pretraining overlap has not been fully audited. Do not set `training_overlap_checked=true` merely because local hashes and adaptation split separation were verified. Ordinary voiced mouth crops lack evidence for deliberate silent articulation and real webcam conditions. Even a statistically improved result cannot lift experimental status or establish usable unrestricted silent Mandarin input. Record actual measurements in separate benchmark reports rather than substituting example commands for evidence.

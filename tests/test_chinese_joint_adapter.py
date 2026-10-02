@@ -165,11 +165,11 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
                         'author', True, 'mouth_roi', True, sha256=role, split=role)
         datasets[role] = Dataset((sample,), split=role)
         path = tmp_path / (role + '.json')
-        path.write_text(json.dumps({'source': {'revision': 'pinned'}}))
+        path.write_text(json.dumps({'source': {'revision': 'pinned'}}), encoding='utf-8')
         paths[role] = str(path)
     source = tmp_path / 'source' / 'datamodule'
     source.mkdir(parents=True)
-    (source / 'char_units.txt').write_text('甲 1\n乙 2\n丙 3\n')
+    (source / 'char_units.txt').write_text('甲 1\n乙 2\n丙 3\n', encoding='utf-8')
     reader = _reader()
     reader.token_list = ['<blank>', '甲', '乙', '丙', '<eos>']
     reader.language = 'zh'
@@ -193,7 +193,7 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
         visual_reads.append(sample.split)
         assert sample.split == 'train'
         if abort_after_resume:
-            saved = json.loads((output / 'report.json').read_text())
+            saved = json.loads((output / 'report.json').read_text(encoding='utf-8'))
             assert saved['status'] == 'resumed_at_complete_epoch'
             assert saved['selected_epoch'] == 1
             assert saved['resume_events'][0]['from_complete_epoch'] == 1
@@ -201,7 +201,7 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
         if len(visual_reads) == 2:
             # The preceding complete-epoch adapter must already be durable,
             # even when execution bypasses all normal end-of-run saves.
-            saved = json.loads((output / 'report.json').read_text())
+            saved = json.loads((output / 'report.json').read_text(encoding='utf-8'))
             assert saved['selected_epoch'] == 1
             artifact = torch.load(output / 'encoder_adapter.pth', weights_only=True)
             assert artifact['metadata']['selected_epoch'] == 1
@@ -229,7 +229,7 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
         with pytest.raises(SystemExit) as caught:
             trainer.run(args)
         assert caught.value.code == 99
-        report = json.loads((output / 'report.json').read_text())
+        report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
     else:
         report = trainer.run(args)
     assert loaded == ['train', 'dev']
@@ -243,8 +243,8 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
     assert report['protocol']['test_loaded_or_scored'] is False
     assert report['activation']['automatic_activation'] is False
     assert report['activation']['eligible_for_manual_research_evaluation'] is True
-    assert json.loads((output / 'baseline.json').read_text())['selected_epoch'] == 0
-    assert json.loads((output / 'report.json').read_text())['selected_epoch'] == 1
+    assert json.loads((output / 'baseline.json').read_text(encoding='utf-8'))['selected_epoch'] == 0
+    assert json.loads((output / 'report.json').read_text(encoding='utf-8'))['selected_epoch'] == 1
     fresh_reader = _reader()
     fresh_reader.language = 'zh'
     provenance = _load_adapter(fresh_reader, output / 'encoder_adapter.pth')
@@ -252,9 +252,9 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
     assert provenance['last_encoder_layers'] == 2
     if interrupt == 'budget_stop':
         args.resume = True
-        ledger = json.loads((output / 'active_budget.json').read_text())
+        ledger = json.loads((output / 'active_budget.json').read_text(encoding='utf-8'))
         ledger['active_budget_elapsed_seconds'] = 1900.0
-        (output / 'active_budget.json').write_text(json.dumps(ledger))
+        (output / 'active_budget.json').write_text(json.dumps(ledger), encoding='utf-8')
         torch.manual_seed(3)
         resumed_reader = _reader()
         resumed_reader.token_list = reader.token_list
@@ -299,9 +299,9 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
         # artifact lets resume restore the matching best model safely.
         (output / 'encoder_adapter.pth').unlink()
         (output / 'encoder_adapter.pth').write_bytes(b'uncommitted future artifact')
-        future_report = json.loads((output / 'report.json').read_text())
+        future_report = json.loads((output / 'report.json').read_text(encoding='utf-8'))
         future_report['selected_epoch'] = 2
-        (output / 'report.json').write_text(json.dumps(future_report))
+        (output / 'report.json').write_text(json.dumps(future_report), encoding='utf-8')
         torch.manual_seed(3)
         resumed_reader = _reader()
         resumed_reader.token_list = reader.token_list
@@ -312,7 +312,7 @@ def test_train_dev_workflow_saves_earliest_best_and_survives_interrupt(tmp_path,
         with pytest.raises(SystemExit) as caught:
             trainer.run(args)
         assert caught.value.code == 123
-        restored = json.loads((output / 'report.json').read_text())
+        restored = json.loads((output / 'report.json').read_text(encoding='utf-8'))
         assert restored['selected_epoch'] == 1
         assert restored['status'] == 'resumed_at_complete_epoch'
         abort_after_resume = False
@@ -402,6 +402,6 @@ def test_resume_rejects_each_invalid_budget_before_max(tmp_path, location, inval
     torch.save(checkpoint, tmp_path / 'training_resume.pth')
     (tmp_path / 'active_budget.json').write_text(json.dumps({
         'identity_sha256': digest,
-        'active_budget_elapsed_seconds': invalid if location == 'ledger' else 10.0}))
+        'active_budget_elapsed_seconds': invalid if location == 'ledger' else 10.0}), encoding='utf-8')
     with pytest.raises(ValueError, match='Invalid resume active budget'):
         _load_resume(tmp_path, identity)
