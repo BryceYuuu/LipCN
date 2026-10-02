@@ -10,6 +10,7 @@ import glob
 import os
 import random
 import re
+import shlex
 import subprocess
 import threading
 import time
@@ -35,19 +36,6 @@ CLIPS = os.path.join(DIR, "clips", "onboarding")
 N_SENTENCES = 24
 N_HELD_OUT = 6
 WW, WH = 620, 600
-
-
-def grant_covers(cdhash: str, auth_value, csreq) -> bool:
-    """True when TCC allowed this bundle and the stored requirement is this binary.
-
-    auth_value 2 is "allowed". The requirement blob holds the code directory hash of
-    the executable the user approved. CGPreflight* does not see a grant made after this
-    process started, so setup compares the hash itself and restarts once.
-    """
-    if auth_value != 2 or not cdhash or not csreq:
-        return False
-    return cdhash.lower() in bytes(csreq).hex()
-
 
 # Harvard sentences (IEEE 1969 "Recommended Practice for Speech Quality Measurements", lists 1-6):
 # short, phonetically balanced sentences, so practice covers every lip shape evenly. Used when there's
@@ -288,7 +276,12 @@ class Onboarding(NSObject):
             btn = self._button("Allow", action, WW - 180, y + 3, 96, h=32)
             self.perm_rows.append((status, btn))
         self.perm_next = self._button("Continue", "goWords:", (WW - 200) / 2, 90, 200, primary=True)
-        self._relaunching = False
+        # macOS keeps a denial for the life of the process, so a switch turned on in Settings
+        # may not show up until Lipflow restarts. Offer that once an Allow has been clicked.
+        self.perm_restart = self._button("Turned them on? Restart Lipflow", "restartForPerms:",
+                                         (WW - 260) / 2, 46, 260, h=30)
+        self.perm_restart.setHidden_(True)
+        self._asked_perms = False
         self.refreshPerms_(None)
         self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1.0, self, "refreshPerms:", None, True)
@@ -308,76 +301,15 @@ class Onboarding(NSObject):
         ready = all(states)
         self.perm_next.setEnabled_(ready)
         self.perm_next.layer().setOpacity_(1.0 if ready else 0.35)
-        if ready:
-            try:
-                os.remove(self._relaunch_marker())
-            except OSError:
-                pass
-            return
-        # macOS keeps the denial for the life of this process. Once Settings has a
-        # grant for this exact binary, restart so the next process can see it.
-        if self._relaunching or self._relaunch_marker_fresh():
-            return
-        stuck = ((not states[1] and self._grant_matches("kTCCServiceListenEvent"))
-                 or (not states[2] and self._grant_matches("kTCCServiceAccessibility")))
-        if stuck:
-            self._relaunching = True
-            self._relaunch()
+        self.perm_restart.setHidden_(ready or not self._asked_perms)
 
-    @objc.python_method
-    def _relaunch_marker(self):
-        return os.path.join(DIR, "perm-relaunch")
-
-    @objc.python_method
-    def _relaunch_marker_fresh(self):
-        try:
-            return time.time() - os.path.getmtime(self._relaunch_marker()) < 120
-        except OSError:
-            return False
-
-    @objc.python_method
-    def _cdhash(self):
-        cached = getattr(self, "_cdhash_val", None)
-        if cached is not None:
-            return cached
-        from AppKit import NSBundle
-        exe = NSBundle.mainBundle().executablePath()
-        p = subprocess.run(["codesign", "-dvvv", exe], capture_output=True, text=True)
-        cd = ""
-        for line in (p.stdout + p.stderr).splitlines():
-            if line.startswith("CDHash="):
-                cd = line.split("=", 1)[1].strip().lower()
-        self._cdhash_val = cd
-        return cd
-
-    @objc.python_method
-    def _grant_matches(self, service):
-        """True when TCC already allows this bundle AND the grant is for this binary."""
-        cd = self._cdhash()
-        if not cd:
-            return False
-        try:
-            import sqlite3
-            con = sqlite3.connect("file:/Library/Application Support/com.apple.TCC/TCC.db?mode=ro", uri=True)
-            row = con.execute(
-                "SELECT auth_value, csreq FROM access WHERE service=? AND client=?",
-                (service, "app.lipflow.Lipflow")).fetchone()
-        except Exception:
-            return False
-        return grant_covers(cd, row[0], row[1])
-
-    @objc.python_method
-    def _relaunch(self):
-        import shlex
+    def restartForPerms_(self, sender):
         from AppKit import NSApplication, NSBundle
-        app = NSBundle.mainBundle().bundlePath()
-        if not str(app).endswith(".app"):
+        app = str(NSBundle.mainBundle().bundlePath())
+        if not app.endswith(".app"):  # run from a terminal: nothing to reopen
             return
-        os.makedirs(DIR, exist_ok=True)
-        open(self._relaunch_marker(), "w").close()
         # Detach so quitting this process does not kill the delayed reopen.
-        subprocess.Popen(["/bin/bash", "-c", f"sleep 0.6; open {shlex.quote(app)}"],
-                         start_new_session=True)
+        subprocess.Popen(["/bin/bash", "-c", f"sleep 0.6; open {shlex.quote(app)}"], start_new_session=True)
         NSApplication.sharedApplication().terminate_(None)
 
     def askCamera_(self, sender):
@@ -388,10 +320,12 @@ class Onboarding(NSObject):
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"')
 
     def askInput_(self, sender):
+        self._asked_perms = True
         if not Quartz.CGRequestListenEventAccess():
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"')
 
     def askAccess_(self, sender):
+        self._asked_perms = True
         if not Quartz.CGRequestPostEventAccess():
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"')
 
