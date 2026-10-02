@@ -103,7 +103,8 @@ def _batch(args):
         max_cer=args.max_cer, min_exact_sentence_rate=args.min_exact_sentence_rate,
         min_non_rejected_coverage=args.min_non_rejected_coverage,
         max_p95_rtf=args.max_p95_rtf, max_p95_processing_seconds=args.max_p95_processing_seconds,
-        require_webcam_domain=not args.allow_non_webcam_domain)
+        require_webcam_domain=not args.allow_non_webcam_domain,
+        require_silent_articulation=not args.allow_voiced_articulation)
     predictions, startup = [], time.monotonic()
     if dataset.samples:
         # References are kept in the scoring layer only. No phrase retrieval,
@@ -175,6 +176,8 @@ def main():
     p.add_argument('--max-p95-processing-seconds', type=float, default=2.0)
     p.add_argument('--allow-non-webcam-domain', action='store_true',
                    help='Override the webcam criterion for a stated research domain; not webcam readiness')
+    p.add_argument('--allow-voiced-articulation', action='store_true',
+                   help='Research-only visual benchmark of voiced/whispered mouth movements; not silent-speech readiness')
     args = p.parse_args()
     if args.beam_size < 1:
         p.error('--beam-size must be positive')

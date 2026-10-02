@@ -1,7 +1,8 @@
 r"""Optional pure-visual CNVSRC2025 research comparison, separate from the GUI.
 
 Supply local author sources and checkpoint; this script never downloads files or
-reads audio. Example from the Lipflow repository:
+reads audio. --adapter loads a strictly bound local encoder-only research
+adaptation; it never activates GUI or personal weights. Example from the Lipflow repository:
     uv run python scripts/evaluate_cnvsrc.py --accept-research-license \
         --checkpoint /local/model_avg_cncvs_2_3_cnvsrc.pth \
         --source-dir /local/CNVSRC2025 --manifest test.json --output report.json
@@ -18,6 +19,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import hashlib
+import io
 import json
 import math
 from pathlib import Path
@@ -116,6 +118,82 @@ def _reader(checkpoint: Path, source_dir: Path, beam_size: int, ctc_weight: floa
     return ResearchReader()
 
 
+
+def _load_adapter(reader, path: Path) -> dict:
+    """Validate a complete final-encoder research artifact before any mutation.
+
+    The main reader has already strictly verified its pinned base checkpoint.
+    Loading only selected parameters keeps inherited BN statistics, frontend,
+    earlier encoder layers, CTC and both decoders intact.
+    """
+    import torch
+
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    try:
+        artifact = torch.load(io.BytesIO(data), map_location='cpu', weights_only=True)
+    except Exception as exc:
+        raise ValueError(f'Cannot load research adapter with weights_only=True: {type(exc).__name__}') from exc
+    if not isinstance(artifact, dict) or type(artifact.get('schema_version')) is not int or artifact['schema_version'] != 1:
+        raise ValueError('Expected research adapter schema_version=1')
+    if artifact.get('language') != 'zh' or reader.language != 'zh':
+        raise ValueError('Research adapter language must be zh and match its reader')
+    if artifact.get('base_checkpoint_sha256') != CHECKPOINT_SHA256:
+        raise ValueError('Research adapter is bound to a different base checkpoint SHA256')
+    metadata = artifact.get('metadata')
+    if not isinstance(metadata, dict):
+        raise ValueError('Research adapter metadata must be an object')
+    base = metadata.get('base')
+    if not isinstance(base, dict) or any(base.get(key) != value for key, value in (
+            ('checkpoint_sha256', CHECKPOINT_SHA256), ('configuration_sha256', CONFIG_SHA256),
+            ('vocabulary_sha256', VOCABULARY_SHA256), ('source_revision', SOURCE_REVISION))):
+        raise ValueError('Research adapter metadata has inconsistent base provenance')
+    layers = artifact.get('last_encoder_layers')
+    blocks = reader.model.encoder.encoders
+    if type(layers) is not int or not 1 <= layers <= len(blocks):
+        raise ValueError('Research adapter last_encoder_layers must fit the encoder')
+    protocol = metadata.get('protocol')
+    if not isinstance(protocol, dict) or type(protocol.get('last_encoder_layers')) is not int or protocol['last_encoder_layers'] != layers:
+        raise ValueError('Research adapter layer count differs from training metadata')
+    parameters = artifact.get('adapter_parameters')
+    if not isinstance(parameters, dict) or not parameters or any(not isinstance(key, str) for key in parameters):
+        raise ValueError('Research adapter_parameters must be a nonempty named tensor map')
+    prefixes = [f'encoder.encoders.{index}.' for index in range(len(blocks) - layers, len(blocks))]
+    if getattr(reader.model.encoder, 'after_norm', None) is not None:
+        prefixes.append('encoder.after_norm.')
+    expected = {name: parameter for name, parameter in reader.model.named_parameters()
+                if name.startswith(tuple(prefixes))}
+    if not expected or set(parameters) != set(expected):
+        missing, unexpected = sorted(set(expected) - set(parameters)), sorted(set(parameters) - set(expected))
+        raise ValueError(f'Research adapter must contain the complete selected encoder parameters; '
+                         f'missing={missing}, unexpected={unexpected}')
+    if type(metadata.get('adapter_tensor_count')) is not int or metadata['adapter_tensor_count'] != len(expected):
+        raise ValueError('Research adapter parameter count differs from training metadata')
+    changed = metadata.get('changed_tensor_count')
+    if type(changed) is not int or not 0 <= changed <= len(expected):
+        raise ValueError('Research adapter changed_tensor_count is invalid')
+    for name, parameter in expected.items():
+        tensor = parameters[name]
+        if not isinstance(tensor, torch.Tensor) or tensor.layout != torch.strided:
+            raise ValueError(f'Research adapter tensor must be dense: {name}')
+        if tensor.shape != parameter.shape or tensor.dtype != parameter.dtype:
+            raise ValueError(f'Research adapter shape/dtype differs from the base: {name}')
+        if not torch.isfinite(tensor).all():
+            raise ValueError(f'Research adapter contains non-finite values: {name}')
+    # All checks and device allocations precede copies. Invalid files cannot
+    # partly overwrite a reader and then be accepted with the remaining base.
+    prepared = {name: tensor.to(device=expected[name].device) for name, tensor in parameters.items()}
+    with torch.no_grad():
+        for name, tensor in prepared.items():
+            expected[name].copy_(tensor)
+    reader.model.eval()
+    return {'file_sha256': digest, 'schema_version': 1, 'language': 'zh',
+            'base_checkpoint_sha256': CHECKPOINT_SHA256, 'last_encoder_layers': layers,
+            'loaded_parameter_count': len(expected), 'changed_tensor_count_reported': changed,
+            'strict_validation': True, 'automatic_activation': False,
+            'usage': 'Local research evaluation only; no GUI or personal model installation'}
+
+
 def run(args) -> dict:
     from evaluate_chinese import ClipRejected, _visual_input
     from lipflow.confidence import assess
@@ -123,6 +201,7 @@ def run(args) -> dict:
     dataset = load_manifest(args.manifest)
     started = time.monotonic()
     reader = _reader(Path(args.checkpoint), Path(args.source_dir), args.beam_size, args.ctc_weight, args.device)
+    adapter = _load_adapter(reader, Path(args.adapter)) if getattr(args, 'adapter', None) else None
     reader.warmup()
     startup = time.monotonic() - started
     predictions, candidates = [], {}
@@ -164,6 +243,7 @@ def run(args) -> dict:
         'length_bonus': 0.0, 'external_lm': False, 'personal': False,
         'encoder_device': str(reader.enc_device), 'decoder_device': str(reader.device),
         'startup_seconds_including_verification_and_warmup': startup,
+        'adapter': adapter,
     }
     for row in report['samples']:
         row['hypotheses'] = candidates.get(row['sample_id'], [])
@@ -184,6 +264,7 @@ def main() -> int:
     parser.add_argument('--source-dir', required=True, help='Local pinned CNVSRC2025 checkout, or its VSR directory')
     parser.add_argument('--manifest', required=True, help='Local schema_version=1 evaluation manifest')
     parser.add_argument('--output')
+    parser.add_argument('--adapter', help='Local complete encoder_adapter.pth from the research training script')
     parser.add_argument('--device', default='auto')
     parser.add_argument('--beam-size', type=int, default=40)
     parser.add_argument('--ctc-weight', type=float, default=.5)

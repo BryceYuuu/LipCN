@@ -64,6 +64,8 @@ class Sample:
     end: float | None = None
     sha256: str = ''
     split: str = 'test'
+    articulation: str = 'unknown'  # silent / voiced / whispered / unknown
+    articulation_verified: bool = False
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,7 @@ class Thresholds:
     max_p95_rtf: float = 1.0
     max_p95_processing_seconds: float = 2.0
     require_webcam_domain: bool = True
+    require_silent_articulation: bool = True
 
     def __post_init__(self):
         for key in ('min_samples', 'min_speakers', 'min_sessions_per_speaker'):
@@ -176,6 +179,10 @@ def load_manifest(path: str | Path) -> Dataset:
             raise ValueError('domain must be mouth_roi, full_face, or webcam')
         verified = item.get('label_verified', False)
         roi = item.get('mouth_roi', fields['domain'] == 'mouth_roi')
+        articulation = item.get('articulation', 'unknown')
+        articulation_verified = item.get('articulation_verified', False)
+        if articulation not in ('silent', 'voiced', 'whispered', 'unknown') or not isinstance(articulation_verified, bool):
+            raise ValueError('articulation must be silent/voiced/whispered/unknown with boolean articulation_verified')
         if not isinstance(verified, bool) or not isinstance(roi, bool):
             raise ValueError('label_verified and mouth_roi must be boolean')
         if roi != (fields['domain'] == 'mouth_roi'):
@@ -189,7 +196,8 @@ def load_manifest(path: str | Path) -> Dataset:
         if not isinstance(split, str) or not split:
             raise ValueError('sample split must be a nonempty string')
         samples.append(Sample(**fields, video=video, sha256=digest, split=split,
-                              label_verified=verified, mouth_roi=roi, start=start, end=end))
+                              label_verified=verified, mouth_roi=roi, start=start, end=end,
+                              articulation=articulation, articulation_verified=articulation_verified))
     development = data.get('development_samples', [])
     if not isinstance(development, list):
         raise ValueError('development_samples must be a list')
@@ -271,6 +279,7 @@ def evaluate(dataset: Dataset, predictions: list[Prediction], thresholds: Thresh
         rows.append({**row_prediction, 'reference': sample.reference, 'speaker': sample.speaker,
                      'session': sample.session, 'label_source': sample.label_source, 'domain': sample.domain,
                      'split': sample.split, 'video_sha256': sample.sha256,
+                     'articulation': sample.articulation, 'articulation_verified': sample.articulation_verified,
                      'character_errors': errors, 'reference_characters': count,
                      'cer': errors / count, 'exact': exact, 'candidate_offered': non_rejected,
                      'automatically_accepted': automatic, 'rtf': rtf})
@@ -307,6 +316,9 @@ def evaluate(dataset: Dataset, predictions: list[Prediction], thresholds: Thresh
     webcam_count = sum(sample.domain == 'webcam' and not sample.mouth_roi for sample in dataset.samples)
     gate('webcam_domain', webcam_count, size if thresholds.require_webcam_domain else 'optional',
          not thresholds.require_webcam_domain or size > 0 and webcam_count == size)
+    silent_count = sum(sample.articulation == 'silent' and sample.articulation_verified for sample in dataset.samples)
+    gate('silent_articulation', silent_count, size if thresholds.require_silent_articulation else 'optional',
+         not thresholds.require_silent_articulation or size > 0 and silent_count == size)
     gate('independent_data', issues, 'No unresolved provenance, overlap, or timing issues', not issues)
     gate('no_inference_failures', totals['inference_failures'], 0, totals['inference_failures'] == 0)
     for name, required, direction in (

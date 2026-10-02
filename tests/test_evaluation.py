@@ -17,7 +17,7 @@ from lipflow.evaluation import (Dataset, Exclusion, Prediction, Sample, Threshol
 def sample(index=0, **changes):
     original = Sample(str(index), f'/local/video{index}.mp4', '明天不要发货', f'speaker{index % 5}',
                       f'session{index // 5 % 2}', 'Human annotation record', True, 'webcam',
-                      sha256=f'content{index}')
+                      sha256=f'content{index}', articulation='silent', articulation_verified=True)
     return replace(original, **changes)
 
 
@@ -55,6 +55,19 @@ def test_empty_dataset_does_not_claim_zero_error_or_readiness():
     assert report['metrics']['exact_sentence_rate'] is None
     assert report['metrics']['rtf_p95'] is None
     assert not report['readiness']['ready']
+
+
+@pytest.mark.parametrize('articulation,verified', [('voiced', True), ('whispered', True),
+                                                  ('unknown', False), ('silent', False)])
+def test_visual_only_predictions_do_not_prove_deliberately_silent_articulation(articulation, verified):
+    data = Dataset(tuple(sample(i, articulation=articulation, articulation_verified=verified)
+                         for i in range(50)), training_overlap_checked=True)
+    predictions = [Prediction(s.id, s.reference, 4, 1) for s in data.samples]
+    report = evaluate(data, predictions)
+    assert report['metrics']['cer'] == 0
+    assert not report['readiness']['ready']
+    gate = next(g for g in report['readiness']['gates'] if g['criterion'] == 'silent_articulation')
+    assert not gate['passed'] and gate['observed'] == 0
 
 
 def test_coverage_is_not_accuracy_and_automatic_subset_is_separate():
@@ -260,8 +273,9 @@ def test_batch_model_is_warmed_once_never_receives_reference_and_keeps_failed_cl
     limits = Thresholds()
     options = vars(limits).copy()
     options.pop('require_webcam_domain')
+    options.pop('require_silent_articulation')
     args = SimpleNamespace(manifest=manifest, beam_size=10, device='cpu', model_dir=str(tmp_path / 'fake-model'),
-                           allow_non_webcam_domain=False, **options)
+                           allow_non_webcam_domain=False, allow_voiced_articulation=False, **options)
     report = script._batch(args)
     assert events == ['load', 'warmup', 'encode']
     assert report['samples'][0]['raw'] == '模型猜测'

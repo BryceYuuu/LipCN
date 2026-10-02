@@ -2,6 +2,37 @@
 
 Local validation on 2026-10-02, Apple M4, macOS, Python 3.12.14. This record describes tests actually run; it is not a claim about user-camera accuracy.
 
+## Third iteration: public-data adaptation improves CER but remains unusable
+
+The user deferred camera recording and requested continuing with public data. No physical webcam or microphone was opened. Upstream PR #4 remains closed.
+
+### Public corpus and fixed adaptation
+
+A deterministic subset of [official Chinese-LiPS](https://huggingface.co/datasets/BAAI/Chinese-LiPS) was fetched from revision `db96948538811029011eee44602438a26710ecd9`: 180 train videos/12 speakers, 30 dev/6 and 50 test/10. These are ordinary voiced speech mouth crops at 96×96/25 fps. Only video and author-provided labels were used; no audio, slides, OCR or LLM. The [dataset paper](https://arxiv.org/abs/2504.15066) describes manual transcription; this experiment did not independently correct possible label errors. CC-BY-NC-SA-4.0 applies.
+
+The partitions have no shared speaker IDs, video hashes or normalized reference text. Base pretraining overlap remains unknown. Twenty whole training records contain targets outside the fixed CNVSRC vocabulary and were explicitly excluded before training. All 160 retained references are unchanged; all 30 dev and 50 test records remain in scoring, including OOV labels. Source hashes and every exclusion are recorded. The preparation script reproduces the same ordered 160 IDs/references. See [the reproducible workflow](CHINESE_ADAPTATION.md).
+
+Model choice used the dev partition: [ViSpeR](https://github.com/YasserdahouML/visper) with the author's Chinese prefix, beam 40/CTC 0.1, made 942/1293 errors (72.85% CER, 0/30 exact); CNVSRC beam 40/CTC 0.5 made 901/1293 (69.68%). Deterministic traditional-to-simplified conversion did not change the ViSpeR dev score. ViSpeR stayed an isolated author-source comparison, with no source/weights integrated into Lipflow. Source revision `772fe4688fad5cea104308f51ccbfe3141b440a1`, [weight revision](https://huggingface.co/tiiuae/visper/tree/1a7d37da9d67980951b9ab181e05ca62c40766d1) `1a7d37da9d67980951b9ab181e05ca62c40766d1`, checkpoint SHA256 `d6b45e0a9988ae3e747496dd0f24c7b3f5e019358e743df8e66579a38e755608`. Both published license versions restrict commercial use; the repository and model card differ on NC license version, so no deployment is inferred.
+
+The selected CNVSRC experiment fixed seed 0, two epochs, learning rate 1e-5, final encoder block plus output norm, CTC-only loss, frozen frontend/head/decoders/BN statistics and no external LM. An initial execution failed on the first training step because MPS warmup cached inference-mode positional tensors. The implementation was repaired with a regression that reproduces the failure and verifies backward gradients. The same protocol was restarted without observing failed-run test scores or changing training/decoding parameters. The completed execution scored baseline and candidate once each per dev/test partition; the earlier failed execution had also run baseline inference. No epoch or checkpoint was selected from test scores.
+
+| Partition | Before errors / characters | Before CER | After errors / characters | After CER | Exact sentences |
+| --- | --- | --- | --- | --- | --- |
+| Dev: 30 clips / 6 speakers | 901 / 1293 | 69.68% | 859 / 1293 | 66.43% | 0 / 30 before and after |
+| Test: 50 clips / 10 speakers | 1277 / 1829 | 69.82% | 1235 / 1829 | 67.52% | 0 / 50 before and after |
+
+Both relative-improvement gates passed, with unchanged candidate coverage (dev 29/30, test 50/50) and zero inference failures. Mean training CTC loss was 3.6466 then 3.4350. All 39 selected parameter tensors changed. The saved 57,010,134-byte research adapter was successfully loaded into the strictly verified CPU base, checking complete parameter keys, shape/dtype, finite values, language and base/config/vocabulary/source provenance. No additional inference was performed for this loading check. Adapter SHA256: `ee20df62ee5032a719366c06e08d0210aa3267c451bf319336665c2fbc82fde3`.
+
+**Product readiness is false.** Adapted test CER 67.52% greatly exceeds the declared 10% goal, exact rate is 0% versus the 70% goal, and warm test p95 processing is 5.05 s versus the 2 s goal (p95 RTF 0.398). Every speaker has only one source session, source video is cropped and voiced, and base pretraining independence has not been established. The modest improvement on this subset does not establish generalization to deliberately silent webcam speech. There is no automatic activation or paste; the GUI continues using its existing review-only Chinese path. Future tuning requires new independent test data.
+
+### Crop diagnostics and collection
+
+Twelve predeclared global crop/grayscale transforms were run on all eight previously inspected AISHELL6 demos (96 inferences, zero crashes). Baseline was 84.18% CER, mirror 79.11%, and exact author float grayscale 83.54%; every transform had 0/8 exact. These are reused development diagnostics, not fresh acceptance data. No transform was promoted into product defaults. Missing full-face landmarks/context cannot be reconstructed from existing crops.
+
+`lipflow collect-chinese` now supports operator-confirmed image-only silent webcam collection, timestamps, untouched raw frames, retake/discard, quotas, unique IDs, SHA256 and atomic manifest updates. It does not open a camera until explicitly run. Actual text and silent articulation require human confirmation. A new readiness gate rejects voiced/whispered/unknown or unverified articulation even when predictions are perfect. Closing an audio track does not establish silent articulation.
+
+Third-iteration checks: **199 passed, 10 skipped** in the complete local suite, including English real-video regression and Chinese strict-load/synthetic inference; **79 passed, 1 optional OpenCV skip** in the Python 3.11 minimal-dependency CI subset. Python 3.11/3.12 compilation and `git diff --check` passed. Synthetic collection tests verify that preview text never enters saved images and discard/rollback preserve earlier data. Real camera permission/recording and Windows UI remain unverified. No live audio/camera test is claimed.
+
 ## Second iteration: pure visual free-form Mandarin is not ready
 
 The user selected fully silent, freely spoken Mandarin sentences. Upstream PR #4 was closed before this iteration. No new merge request is submitted by this change.

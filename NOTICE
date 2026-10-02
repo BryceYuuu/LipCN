@@ -17,6 +17,17 @@ Model weights (downloaded by setup.sh, not redistributed here) are the Auto-AVSR
 LRS3 dataset is licensed for non-commercial research use, so treat the weights the same way.
 
 Optional Mandarin support:
+- scripts/fetch_chinese_lips.py retrieves a deterministic subset of the authors'
+  processed Chinese-LiPS face videos and metadata from the pinned BAAI release:
+  https://huggingface.co/datasets/BAAI/Chinese-LiPS
+  https://arxiv.org/abs/2504.15066
+  The dataset card declares CC-BY-NC-SA-4.0. No dataset videos or reference labels
+  are bundled in this repository. Source attribution and license remain in the
+  downloaded manifests; partial archive retrieval does not verify the whole archive.
+- scripts/train_chinese_adapter.py is a separately written, optional CNVSRC
+  encoder adaptation experiment. Its base weights and resulting partial tensors
+  retain the source research restrictions described below. No automatic product
+  activation or redistribution of source weights is performed.
 - The optional CMLR visual checkpoint and Chinese language model are downloaded from the
   original author's published model zoo, not bundled or redistributed here:
   https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages#model-zoo

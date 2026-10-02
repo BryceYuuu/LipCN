@@ -17,6 +17,8 @@ Everything runs locally on your Mac or Windows PC. An optional LLM pass fixes th
 
 Mandarin silent lip reading can use the author's separate CMLR research checkpoint and character vocabulary. An optional Mandarin quiet-speech path uses local Whisper ASR with a visual quality gate (not a Chinese audio-visual fusion model). **Silent Mandarin accuracy is not yet validated for everyday use.** See [中文安装与使用](docs/CHINESE.md) and [validation results](docs/VALIDATION.md).
 
+Public-data research now includes deterministic Chinese-LiPS sampling, fixed encoder adaptation with separate train/dev/test speakers, and a local `lipflow collect-chinese` tool for operator-confirmed silent webcam clips. See [公开数据适配与本地采集](docs/CHINESE_ADAPTATION.md). Adaptation reports and weights do not automatically activate a model.
+
 Dictation now defaults to a focused candidate chooser (1–3 to select, Esc to retry). English decoder scores, CTC agreement and camera quality support an opt-in heuristic auto policy; scores are not calibrated probabilities. Mandarin always requires confirmation until webcam accuracy is independently validated. All cleanup backends apply the same sensitive-edit checks, with faithful and reviewed polish modes. The original transcript is available in the chooser/history and the Copy raw recognition menu. A [batch visual evaluation protocol](docs/CHINESE_EVALUATION.md) reports raw CER, sentence accuracy, latency and readiness failures without audio or LLM cleanup.
 
 ## Setup

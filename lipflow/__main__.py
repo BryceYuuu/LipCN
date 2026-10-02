@@ -66,13 +66,22 @@ def main(argv=None):
     zh.add_argument("--accept-research-license", action="store_true")
     d = sub.add_parser("doctor", help="check permissions, camera and model files")
     d.add_argument("--language", choices=["en", "zh"], default="en")
+    c = sub.add_parser("collect-chinese", help="manually record labelled silent webcam clips locally")
+    c.add_argument("--output", required=True, help="local dataset directory")
+    c.add_argument("--speaker", required=True, help="consistent speaker ID, e.g. speaker01")
+    c.add_argument("--session", required=True, help="real recording session ID, e.g. day01")
+    c.add_argument("--split", choices=["train", "dev", "test"], default="train")
+    c.add_argument("--sentences", help="UTF-8 text file, one independently authored sentence per line")
+    c.add_argument("--camera", default="auto", help="physical webcam number or Mac camera name")
+    c.add_argument("--max-seconds", type=float, default=15.0)
+    c.add_argument("--max-megabytes", type=float, default=512.0)
     sub.add_parser("onboard", help="open the setup window (permissions, Wispr import, train on your face)")
     sub.add_parser("train-lm", help="fine-tune the language model on your imported phrases")
     w = sub.add_parser("import-wispr", help="learn your phrasing from your Wispr Flow history (stays local)")
     w.add_argument("--from-text", help="import a plain-text file of your writing instead (one phrase per line)")
 
     argv = list(sys.argv[1:] if argv is None else argv)
-    if not argv or argv[0] not in {"run", "file", "doctor", "import-wispr", "onboard", "train-lm", "install-chinese", "-h", "--help"}:
+    if not argv or argv[0] not in {"run", "file", "doctor", "collect-chinese", "import-wispr", "onboard", "train-lm", "install-chinese", "-h", "--help"}:
         argv.insert(0, "run")
     args = p.parse_args(argv)
     cmd = args.cmd
@@ -94,6 +103,19 @@ def main(argv=None):
         try:
             print("Installed Chinese research weights:", install(args.accept_research_license))
         except (ValueError, RuntimeError) as e:
+            p.error(str(e))
+    elif cmd == "collect-chinese":
+        from .collection import collect
+        camera = int(args.camera) if args.camera.isdigit() else args.camera
+        try:
+            manifest = collect(args.output, args.speaker, args.session, args.split,
+                               prompts=args.sentences, camera=camera, max_seconds=args.max_seconds,
+                               max_megabytes=args.max_megabytes)
+            if manifest.exists():
+                print("Local dataset manifest:", manifest)
+            else:
+                print("No confirmed clips saved.")
+        except (OSError, ValueError, RuntimeError) as e:
             p.error(str(e))
     elif cmd == "import-wispr":
         from .personal import PHRASES, import_wispr, save_phrases

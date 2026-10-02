@@ -77,3 +77,5 @@ uv run lipflow file mouth-video.mp4 --language zh --mouth-roi --cleanup basic
 可使用 `scripts/evaluate_chinese.py` 输出字符错误率（CER）、延迟和候选分数，详见 [验证记录](VALIDATION.md)。本版本没有附带他人的录制片段或未经授权的数据集。
 
 新批量验收按照独立说话者、录制日期和真实摄像头条件检查数据充分性，并统计整句正确率和热运行延迟。使用方式见 [中文纯无声验收流程](CHINESE_EVALUATION.md)。公开嘴部裁剪视频只能作为诊断样本，不能通过真实摄像头可用性验收。
+
+本轮新增 Chinese-LiPS 公开样本获取、固定分区的视觉编码器适配以及人工确认的无声摄像头采集命令。研究权重保留在独立实验目录，不会自动启用；真正无声发音与普通说话/耳语在清单和验收条件中明确区分。操作见[公开数据适配与本地采集](CHINESE_ADAPTATION.md)。

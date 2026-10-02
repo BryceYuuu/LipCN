@@ -31,13 +31,19 @@ JSON 路径相对于清单文件。以下是结构示例，文件名、标签和
       "label_source": "人工标注记录：labels/day02.csv 第1行",
       "label_verified": true,
       "domain": "webcam",
-      "mouth_roi": false
+      "mouth_roi": false,
+      "articulation": "silent",
+      "articulation_verified": true
     }
   ]
 }
 ```
 
 `training_overlap_checked` 只有在实际审计完成后才能设为 true。`domain: mouth_roi` 对应已经对齐的 96×96 嘴部裁剪片段；这种数据可用于诊断，但默认不能通过摄像头验收。公开诊断样本应声明 `split: diagnostic`，不能在看过结果、调整模型后重新声称是独立测试。
+
+`articulation` 区分真正无声发音、普通说话（`voiced`）、耳语（`whispered`）和未知（`unknown`）。关闭视频音轨后测试，不能把普通说话改记为无声发音。默认验收要求全部片段都是人工确认的 `silent`；缺少声明、普通说话和耳语都会使这一条件失败。研究普通说话语料可明确传入 `--allow-voiced-articulation`，报告会记录放宽的门槛；这不能证明无声输入可用。
+
+稍后录制真实无声片段时，使用 `lipflow collect-chinese`，见[公开数据适配与本地采集](CHINESE_ADAPTATION.md)。采集工具默认不声称完成训练重叠审计。
 
 运行命令：
 
