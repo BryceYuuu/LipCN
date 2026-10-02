@@ -14,6 +14,7 @@ import os
 import plistlib
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -94,17 +95,44 @@ def build(dest_dir: str = "/Applications") -> str:
         "NSHighResolutionCapable": True,
     }, open(os.path.join(app, "Contents", "Info.plist"), "wb"))
     launcher = os.path.join(macos, "Lipflow")
-    log = os.path.expanduser("~/Library/Logs/Lipflow.log")
-    with open(launcher, "w") as f:
-        f.write(f"""#!/bin/bash
-# Lipflow launcher: runs the checkout at {ROOT}
-cd "{ROOT}" || exit 1
-export PYTHONUNBUFFERED=1 LIPFLOW_APP=1
-exec "{ROOT}/.venv/bin/python" -m lipflow "$@" >> "{log}" 2>&1
-""")
-    os.chmod(launcher, 0o755)
+    _compile_launcher(launcher)
+    # Ad-hoc signature so Accessibility / Input Monitoring bind to this app, not to
+    # whatever Python the old shell launcher exec'd. Unsigned bundles record a grant
+    # the running process can never satisfy, and setup's Continue button stays off.
+    subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", "app.lipflow.Lipflow", app],
+                   check=True)
     subprocess.run(["touch", app])
     return app
+
+
+def _compile_launcher(dest: str) -> None:
+    """Mach-O main executable that loads the venv in-process. See lipflow_launcher.c."""
+    py = os.path.realpath(os.path.join(ROOT, ".venv", "bin", "python"))
+    pyhome = os.path.dirname(os.path.dirname(py))
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    include = os.path.join(pyhome, "include", version)
+    lib = os.path.join(pyhome, "lib")
+    site = os.path.join(ROOT, ".venv", "lib", version, "site-packages")
+    src = os.path.join(os.path.dirname(__file__), "lipflow_launcher.c")
+    if not os.path.isfile(os.path.join(include, "Python.h")):
+        raise SystemExit(f"no Python headers at {include}; run ./setup.sh first")
+    if not os.path.isdir(site):
+        raise SystemExit(f"no venv site-packages at {site}; run ./setup.sh first")
+    subprocess.run([
+        "clang", "-O2", "-arch", "arm64",
+        f"-I{include}",
+        f"-DLIPFLOW_ROOT={root_c(ROOT)}",
+        f"-DLIPFLOW_PYHOME={root_c(pyhome)}",
+        f"-DLIPFLOW_SITE={root_c(site)}",
+        src, f"-L{lib}", f"-l{version}",
+        f"-Wl,-rpath,{lib}",
+        "-o", dest,
+    ], check=True)
+
+
+def root_c(path: str) -> str:
+    """A C string literal, including the quotes clang expects in -DNAME=value."""
+    return '"' + path.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 if __name__ == "__main__":

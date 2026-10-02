@@ -10,6 +10,8 @@ import glob
 import os
 import random
 import re
+import shlex
+import subprocess
 import threading
 import time
 
@@ -274,6 +276,12 @@ class Onboarding(NSObject):
             btn = self._button("Allow", action, WW - 180, y + 3, 96, h=32)
             self.perm_rows.append((status, btn))
         self.perm_next = self._button("Continue", "goWords:", (WW - 200) / 2, 90, 200, primary=True)
+        # macOS keeps a denial for the life of the process, so a switch turned on in Settings
+        # may not show up until Lipflow restarts. Offer that once an Allow has been clicked.
+        self.perm_restart = self._button("Turned them on? Restart Lipflow", "restartForPerms:",
+                                         (WW - 260) / 2, 46, 260, h=30)
+        self.perm_restart.setHidden_(True)
+        self._asked_perms = False
         self.refreshPerms_(None)
         self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1.0, self, "refreshPerms:", None, True)
@@ -290,7 +298,19 @@ class Onboarding(NSObject):
             status.setImage_(symbol("checkmark.circle.fill" if ok else "circle.dashed", 18))
             status.setContentTintColor_(_rgb(GREEN) if ok else _rgb((1, 1, 1), 0.35))
             btn.setHidden_(ok)
-        self.perm_next.setEnabled_(all(states))
+        ready = all(states)
+        self.perm_next.setEnabled_(ready)
+        self.perm_next.layer().setOpacity_(1.0 if ready else 0.35)
+        self.perm_restart.setHidden_(ready or not self._asked_perms)
+
+    def restartForPerms_(self, sender):
+        from AppKit import NSApplication, NSBundle
+        app = str(NSBundle.mainBundle().bundlePath())
+        if not app.endswith(".app"):  # run from a terminal: nothing to reopen
+            return
+        # Detach so quitting this process does not kill the delayed reopen.
+        subprocess.Popen(["/bin/bash", "-c", f"sleep 0.6; open {shlex.quote(app)}"], start_new_session=True)
+        NSApplication.sharedApplication().terminate_(None)
 
     def askCamera_(self, sender):
         from AVFoundation import AVCaptureDevice, AVMediaTypeVideo
@@ -300,10 +320,12 @@ class Onboarding(NSObject):
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera"')
 
     def askInput_(self, sender):
+        self._asked_perms = True
         if not Quartz.CGRequestListenEventAccess():
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"')
 
     def askAccess_(self, sender):
+        self._asked_perms = True
         if not Quartz.CGRequestPostEventAccess():
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"')
 
