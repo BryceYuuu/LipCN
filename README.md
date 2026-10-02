@@ -13,6 +13,12 @@ Everything runs locally on your Mac or Windows PC. An optional LLM pass fixes th
                      live preview: greedy CTC every 0.45 s while you talk
 ```
 
+## Experimental Mandarin and reviewed dictation
+
+Mandarin silent lip reading can use the author's separate CMLR research checkpoint and character vocabulary. An optional Mandarin quiet-speech path uses local Whisper ASR with a visual quality gate (not a Chinese audio-visual fusion model). **Silent Mandarin accuracy is not yet validated for everyday use.** See [中文安装与使用](docs/CHINESE.md) and [validation results](docs/VALIDATION.md).
+
+Dictation now defaults to a focused candidate chooser (1–3 to select, Esc to retry). Decoder scores, CTC agreement and camera quality support an opt-in heuristic auto policy; scores are not calibrated probabilities. All cleanup backends apply the same sensitive-edit checks, with faithful and reviewed polish modes. The original transcript is available in the chooser/history and the Copy raw recognition menu.
+
 ## Setup
 
 Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.

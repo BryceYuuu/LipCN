@@ -15,3 +15,18 @@ Lipflow bundles code from these projects:
 
 Model weights (downloaded by setup.sh, not redistributed here) are the Auto-AVSR LRS3 models; the
 LRS3 dataset is licensed for non-commercial research use, so treat the weights the same way.
+
+Optional Mandarin support:
+- The optional CMLR visual checkpoint and Chinese language model are downloaded from the
+  original author's published model zoo, not bundled or redistributed here:
+  https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages#model-zoo
+  Their source project license restricts use to research/private study and comparative
+  prototypes, excluding commercial product development:
+  https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/blob/master/LICENSE
+  CMLR dataset use is also research-only: https://www.vipazoo.cn/CMLR.html
+  No additional code is copied from that source project by this adaptation.
+- Optional Chinese quiet-speech inference uses faster-whisper (MIT), CTranslate2 and
+  OpenCC-Python (Apache 2.0), installed as dependencies. Whisper model weights are downloaded
+  separately via faster-whisper; check the selected model card. Default model conversion:
+  https://huggingface.co/dropbox-dash/faster-whisper-large-v3-turbo
+  This audio backend is not a Mandarin visual/AVSR model.

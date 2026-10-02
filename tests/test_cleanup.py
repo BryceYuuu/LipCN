@@ -26,7 +26,10 @@ def test_custom_words_pick_the_guess_and_fix_case():
     c = Cleaner("basic")
     c.personal = Personal("/nonexistent")  # don't depend on the user's imported history
     guesses = ["HELLO MCCALL I AM SENDING YOU A MESSAGE", "HELLO MIGUEL I AM SENDING YOU A MESSAGE"]
-    assert c(guesses, words=["Miguel"]) == "Hello Miguel I am sending you a message."
+    result = c.process(guesses, words=["Miguel"])
+    assert result.needs_review  # changing the recipient must be confirmed, even if in another candidate
+    assert result.proposed == "Hello Miguel I am sending you a message."
+    assert result.text == "Hello mccall I am sending you a message."
     assert c(guesses, words=[]) == "Hello mccall I am sending you a message."
 
 

@@ -43,25 +43,40 @@ def pick_encoder_device(pref: str = "auto") -> torch.device:
 class LipReader:
     def __init__(self, device: str = "auto", beam_size: int = 20, lm_weight: float = 0.3,
                  ctc_weight: float = 0.1, use_lm: bool = True, personal_weight: "float | None" = None,
-                 personal: bool = True):
+                 personal: bool = True, language: str = "en", model_dir: str | None = None):
+        if language not in ("en", "zh"):
+            raise ValueError("language must be en or zh")
+        self.language = language
+        model_root = model_dir or (os.path.join(MODELS, "zh") if language == "zh" else MODELS)
+        # Chinese checkpoints use a different vocabulary. Never load English personal weights.
+
         # The 3D-conv + conformer encoder is 17x faster on the Apple GPU; beam search is
         # thousands of tiny ops and runs faster on CPU, so the two are split.
         self.enc_device = pick_encoder_device(device)
         self.device = torch.device("cuda") if self.enc_device.type == "cuda" else torch.device("cpu")
-        with open(os.path.join(MODELS, "vsr", "model.json"), "rb") as f:
+        config_path = os.path.join(model_root, "vsr", "model.json")
+        if language == "zh" and not os.path.exists(config_path):
+            raise FileNotFoundError("Chinese research weights missing. Read docs/CHINESE.md and run "
+                                    "lipflow install-chinese --accept-research-license, or use Chinese whisper mode.")
+        with open(config_path, "rb") as f:
             confs = json.load(f)
         args = argparse.Namespace(**(confs if isinstance(confs, dict) else confs[2]))
         units = os.path.join(os.path.dirname(__file__), "unigram5000_units.txt")
-        self.token_list = ["<blank>"] + [l.split()[0] for l in open(units, encoding="utf-8").read().splitlines()] + ["<eos>"]
+        self.token_list = (args.char_list if language == "zh" else
+                           ["<blank>"] + [l.split()[0] for l in open(units, encoding="utf-8").read().splitlines()] + ["<eos>"])
+        if language == "zh":
+            args.ctc_type = "builtin"  # inference does not need the old warp-ctc extension
+            if not any("\u4e00" <= t <= "\u9fff" for t in self.token_list):
+                raise ValueError("Chinese checkpoint must contain a Han character vocabulary")
         odim = len(self.token_list)
 
         self.model = E2E(odim, args)
-        state = torch.load(os.path.join(MODELS, "vsr", "model.pth"), map_location="cpu", weights_only=True)
+        state = torch.load(os.path.join(model_root, "vsr", "model.pth"), map_location="cpu", weights_only=True)
         self.model.load_state_dict(state)
         # Your face: a fine-tuned copy of the visual model from onboarding (only the changed tensors)
         self.personal_vsr = False
-        from .paths import PERSONAL_LM, PERSONAL_VSR
-        pv = PERSONAL_VSR
+        from .paths import PERSONAL_LM, personal_vsr
+        pv = personal_vsr(language)
         if personal and os.path.exists(pv):
             self.model.load_state_dict(torch.load(pv, map_location="cpu", weights_only=True), strict=False)
             self.personal_vsr = True
@@ -71,8 +86,8 @@ class LipReader:
         scorers = self.model.scorers()
         lm = None
         if use_lm and lm_weight > 0:
-            lm_path = os.path.join(MODELS, "lm", "model.pth")
-            lm_args = get_model_conf(lm_path, os.path.join(MODELS, "lm", "model.json"))
+            lm_path = os.path.join(model_root, "lm", "model.pth")
+            lm_args = get_model_conf(lm_path, os.path.join(model_root, "lm", "model.json"))
             lm_class = dynamic_import_lm(getattr(lm_args, "model_module", "default"), lm_args.backend)
             lm = lm_class(odim, lm_args)
             torch_load(lm_path, lm)
@@ -82,7 +97,7 @@ class LipReader:
         # alongside the general one so the search still knows ordinary English.
         plm = None
         pl = PERSONAL_LM
-        if lm is not None and personal and os.path.exists(pl):
+        if lm is not None and personal and language == "en" and os.path.exists(pl):
             plm = lm_class(odim, lm_args)
             plm.load_state_dict(torch.load(pl, map_location="cpu", weights_only=True))
             plm.eval()
@@ -140,18 +155,27 @@ class LipReader:
         return self._clean("".join(out))
 
     @torch.inference_mode()
+    def hypotheses(self, enc: torch.Tensor, nbest: int = 5):
+        """Keep decoder evidence for routing. These scores are not correctness probabilities."""
+        from .confidence import Hypothesis
+        texts, out = set(), []
+        for h in self.beam(enc):
+            text = self._clean(add_results_to_json([h.asdict()], self.token_list))
+            if text in texts or not text:
+                continue
+            texts.add(text)
+            out.append(Hypothesis(text, float(h.score), max(len(h.yseq) - 2, 1)))
+            if len(out) >= nbest:
+                break
+        return out
+
     def beam_search(self, enc: torch.Tensor, nbest: int = 1) -> "str | list[str]":
-        hyps = self.beam(enc)
-        texts = []
-        for h in hyps[:max(nbest, 1)]:
-            t = self._clean(add_results_to_json([h.asdict()], self.token_list))
-            if t not in texts:
-                texts.append(t)
-        return texts if nbest > 1 else texts[0]
+        texts = [h.text for h in self.hypotheses(enc, nbest)]
+        return texts if nbest > 1 else (texts[0] if texts else "")
 
     @staticmethod
     def _clean(text: str) -> str:
-        return " ".join(text.replace("▁", " ").replace("<eos>", "").split())
+        return " ".join(text.replace("▁", " ").replace("<space>", " ").replace("<eos>", "").split())
 
     def read(self, rois: np.ndarray, fast: bool = False) -> tuple[str, float]:
         """Return (UPPERCASE transcript, seconds spent)."""
