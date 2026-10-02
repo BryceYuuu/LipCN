@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 from .face import FaceObs, FaceTracker
-from .paths import WHO, WINDOWS
+from .paths import LINUX, WHO, WINDOWS
 
 
 @dataclass
@@ -47,7 +47,7 @@ def list_cameras() -> list[dict]:
     """Cameras in OpenCV's index order. OpenCV's AVFoundation backend sorts devices by uniqueID,
     which is *not* macOS's order, so a Continuity Camera iPhone often lands at index 0.
     On Windows OpenCV can't name cameras, so this is empty and cameras are picked by number."""
-    if WINDOWS:
+    if WINDOWS or LINUX:
         return []
     from AVFoundation import AVCaptureDevice, AVMediaTypeMuxed, AVMediaTypeVideo
     devs = list(AVCaptureDevice.devicesWithMediaType_(AVMediaTypeVideo)) + \
@@ -145,7 +145,12 @@ class Camera:
         self._file_fps = None
         idx = resolve_camera(self.index)
         # DirectShow opens fast and keeps the order Windows lists cameras in; MSMF can take seconds.
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW if WINDOWS else cv2.CAP_AVFOUNDATION)
+        if WINDOWS:
+            cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+        elif LINUX:
+            cap = cv2.VideoCapture(idx)
+        else:
+            cap = cv2.VideoCapture(idx, cv2.CAP_AVFOUNDATION)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
@@ -153,6 +158,8 @@ class Camera:
             if WINDOWS:
                 raise RuntimeError("Could not open the camera. Turn on Settings → Privacy & security → Camera → "
                                    "Let desktop apps access your camera, and close other apps using it")
+            if LINUX:
+                raise RuntimeError("Could not open the camera. Check PipeWire/v4l2 and close other apps using it")
             raise RuntimeError(f"Could not open the camera. Allow {WHO} in "
                                "Settings → Privacy & Security → Camera")
         return cap

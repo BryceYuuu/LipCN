@@ -12,9 +12,13 @@ os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("OPENCV_AVFOUNDATION_SKIP_AUTH", "1")
 
 
+def _desktop_tray() -> bool:
+    return sys.platform in ("win32", "linux")
+
+
 def _app():
-    """(Options, run) for this OS's front end: menu bar on macOS, system tray on Windows."""
-    if sys.platform == "win32":
+    """Menu bar on macOS, system tray on Windows and Linux."""
+    if _desktop_tray():
         from .win.app import Options, run
     else:
         from .app import Options, run
@@ -22,7 +26,7 @@ def _app():
 
 
 def main(argv=None):
-    if sys.platform == "win32":
+    if _desktop_tray():
         for stream in (sys.stdout, sys.stderr):  # ✓ and → in a cp1252 console or a pipe
             if stream is not None and hasattr(stream, "reconfigure"):
                 stream.reconfigure(encoding="utf-8", errors="replace")

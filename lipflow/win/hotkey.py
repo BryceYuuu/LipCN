@@ -1,9 +1,11 @@
-"""Global push-to-talk key on Windows via a pynput low-level keyboard hook. Timing lives in ptt.py.
+"""Global push-to-talk key via a pynput keyboard hook. Timing lives in ptt.py.
 
 Windows needs no permission for this. Keystrokes Lipflow injects itself (the Ctrl+V paste) are
-skipped, so they can't be mistaken for a shortcut.
+skipped, so they can't be mistaken for a shortcut. That injected-key filter is Windows-only.
 """
 from __future__ import annotations
+
+import sys
 
 from pynput import keyboard
 
@@ -34,12 +36,13 @@ class PushToTalk(PushToTalkState):
         self._listener = None
 
     def install(self):
-        def filt(msg, data):
-            # Runs before on_press/on_release; returning False hides the event from them only.
-            return not (data.flags & LLKHF_INJECTED)
-
-        self._listener = keyboard.Listener(on_press=self.press, on_release=self.release,
-                                           win32_event_filter=filt)
+        kwargs = {"on_press": self.press, "on_release": self.release}
+        if sys.platform == "win32":
+            def filt(msg, data):
+                # Runs before on_press/on_release; returning False hides the event from them only.
+                return not (data.flags & LLKHF_INJECTED)
+            kwargs["win32_event_filter"] = filt
+        self._listener = keyboard.Listener(**kwargs)
         self._listener.daemon = True
         self._listener.start()
 
