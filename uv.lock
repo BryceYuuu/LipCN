@@ -10,6 +10,12 @@ resolution-markers = [
     "(python_full_version < '3.12' and platform_machine != 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.12' and sys_platform != 'darwin' and sys_platform != 'linux')",
 ]
 
+[manifest]
+
+[[manifest.dependency-metadata]]
+name = "pynput"
+requires-dist = ["evdev-binary>=1.7 ; 'linux' in sys_platform", "python-xlib ; 'linux' in sys_platform", "six", "pyobjc-framework-applicationservices ; sys_platform == 'darwin'", "pyobjc-framework-quartz ; sys_platform == 'darwin'"]
+
 [[package]]
 name = "absl-py"
 version = "2.5.0"
@@ -369,10 +375,15 @@ wheels = [
 ]
 
 [[package]]
-name = "evdev"
+name = "evdev-binary"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/2e/07/eb30593524303d1367f0dc00c1c66582c994dba412a47751e34bad9fa29b/evdev-2.0.0.tar.gz", hash = "sha256:442fb3f4c8dfc9e61e901133c356220c02d663eca8f34722e0cecdd637eba504", size = 33766, upload-time = "2026-08-23T10:31:26.835Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/01/ca/4e6b01b284074cc2b7b80216283414c5edbf4b2c7ec79b0b4e8eec8ff00f/evdev_binary-2.0.0-cp311-cp311-manylinux1_x86_64.manylinux_2_34_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:1c3e4c14a855e630171b9154a3dd9e436b99c993ca74810fee37c44394ad77b7", size = 113396, upload-time = "2026-08-23T10:33:48.402Z" },
+    { url = "https://files.pythonhosted.org/packages/d1/0d/cdd5433944356663ca12aab9eea142c4f40a940f55f031b1de3b7ac30adb/evdev_binary-2.0.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:6e71d204a640414ab938ed51f58b890f0af794d6e2fc18e2d064a38751866028", size = 113563, upload-time = "2026-08-23T10:33:49.743Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/82/858b89730d045bf4171e83f4402d208f4697b9a685e2dac06547dbf87536/evdev_binary-2.0.0-cp312-cp312-manylinux1_x86_64.manylinux_2_34_x86_64.manylinux_2_5_x86_64.whl", hash = "sha256:4721296f6439fd2a923f9e174c9a4dede44efee6aef3470775154d9cf7b54ba3", size = 113654, upload-time = "2026-08-23T10:33:50.801Z" },
+    { url = "https://files.pythonhosted.org/packages/c5/aa/43b0cbb33c33aecfd4c0a53d444883befd2af3e19c5e3f1c4ecdf1697322/evdev_binary-2.0.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:60af0031e883aa77f6f6cb437ce7034f9f982475d7de8d3c4edb786014cbfd10", size = 113668, upload-time = "2026-08-23T10:33:52.047Z" },
+]
 
 [[package]]
 name = "filelock"
@@ -695,16 +706,17 @@ dependencies = [
     { name = "anthropic" },
     { name = "av", version = "18.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "av", version = "19.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "evdev-binary", marker = "sys_platform == 'linux'" },
     { name = "mediapipe" },
     { name = "mlx-lm", marker = "sys_platform == 'darwin'" },
     { name = "numpy" },
     { name = "opencv-python" },
-    { name = "pillow", marker = "sys_platform == 'win32'" },
+    { name = "pillow", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "pynput" },
     { name = "pyobjc-framework-avfoundation", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
-    { name = "pystray", marker = "sys_platform == 'win32'" },
+    { name = "pystray", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
     { name = "requests" },
     { name = "sentencepiece" },
     { name = "sounddevice" },
@@ -720,16 +732,17 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
     { name = "av", specifier = ">=18.1.0" },
+    { name = "evdev-binary", marker = "sys_platform == 'linux'", specifier = ">=1.7" },
     { name = "mediapipe", specifier = "==0.10.21" },
     { name = "mlx-lm", marker = "sys_platform == 'darwin'", specifier = ">=0.31.3" },
     { name = "numpy", specifier = "<2" },
     { name = "opencv-python", specifier = ">=4.9,<4.11" },
-    { name = "pillow", marker = "sys_platform == 'win32'", specifier = ">=10" },
+    { name = "pillow", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=10" },
     { name = "pynput", specifier = ">=1.7.7" },
     { name = "pyobjc-framework-avfoundation", marker = "sys_platform == 'darwin'", specifier = ">=10.3" },
     { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=10.3" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=10.3" },
-    { name = "pystray", marker = "sys_platform == 'win32'", specifier = ">=0.19" },
+    { name = "pystray", marker = "sys_platform == 'linux' or sys_platform == 'win32'", specifier = ">=0.19" },
     { name = "requests", specifier = ">=2.31" },
     { name = "sentencepiece", specifier = ">=0.2.2" },
     { name = "sounddevice", specifier = ">=0.5.6" },
@@ -1333,7 +1346,7 @@ name = "pynput"
 version = "1.8.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "evdev", marker = "'linux' in sys_platform" },
+    { name = "evdev-binary", marker = "'linux' in sys_platform" },
     { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
     { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
     { name = "python-xlib", marker = "'linux' in sys_platform" },

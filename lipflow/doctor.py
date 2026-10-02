@@ -20,7 +20,7 @@ def doctor() -> int:
     if sys.platform == "win32":
         fix_models = "run .\\setup.ps1"
     elif sys.platform == "linux":
-        fix_models = "run ./scripts/download-models.sh or: nix run .#fetch-models"
+        fix_models = "run ./scripts/download-models.sh"
     else:
         fix_models = "run ./setup.sh"
 
@@ -78,17 +78,21 @@ def _windows_checks(line):
 
 
 def _linux_checks(line):
-    wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
-    if wayland:
+    from .linux.paste import wayland_session
+    if wayland_session():
+        from .linux.hotkey import keyboards_readable
         line(shutil.which("wl-copy") is not None, "wl-copy (clipboard)",
-             "nix profile install nixpkgs#wl-clipboard")
-        line(shutil.which("wtype") is not None, "wtype (paste at cursor)",
-             "nix profile install nixpkgs#wtype")
+             "install wl-clipboard")
+        line(any(shutil.which(tool) for tool in ("wtype", "ydotool", "dotool")),
+             "Wayland paste (wtype, ydotool, or dotool)",
+             "install wtype (Hyprland, Sway) or ydotool with ydotoold running (GNOME, KDE, other Wayland)")
+        line(keyboards_readable(), "Wayland push-to-talk key (/dev/input)",
+             "add your user to the input group and log in again")
     else:
         line(shutil.which("xclip") is not None, "xclip (clipboard)",
-             "nix profile install nixpkgs#xclip")
+             "install xclip")
         line(shutil.which("xdotool") is not None, "xdotool (paste at cursor)",
-             "nix profile install nixpkgs#xdotool")
+             "install xdotool")
     line(shutil.which("wl-paste") is not None or shutil.which("xclip") is not None,
          "clipboard read (optional, for restore)", "same as above")
 

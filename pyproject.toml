@@ -6,6 +6,7 @@ requires-python = ">=3.11,<3.13"
 dependencies = [
     "anthropic>=0.40",
     "av>=18.1.0",
+    "evdev-binary>=1.7; sys_platform == 'linux'",  # Wayland hotkey; wheels, unlike evdev which needs kernel headers
     "mediapipe==0.10.21",
     "mlx-lm>=0.31.3; sys_platform == 'darwin'",  # local cleanup model (Apple Silicon)
     "numpy<2",
@@ -35,4 +36,16 @@ packages = ["lipflow", "espnet"]
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+]
+
+# pynput asks for the source-only `evdev` package. `evdev-binary` is the same module as a wheel.
+[tool.uv]
+dependency-metadata = [
+    { name = "pynput", requires-dist = [
+        "evdev-binary>=1.7; 'linux' in sys_platform",
+        "python-xlib; 'linux' in sys_platform",
+        "six",
+        "pyobjc-framework-applicationservices; sys_platform == 'darwin'",
+        "pyobjc-framework-quartz; sys_platform == 'darwin'",
+    ] },
 ]

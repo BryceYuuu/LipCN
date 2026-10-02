@@ -10,7 +10,11 @@ if ! command -v uv >/dev/null; then
 fi
 
 uv sync
-./scripts/download-models.sh
+if [[ "${1:-}" == "--samples" ]]; then
+  ./scripts/download-models.sh --samples
+else
+  ./scripts/download-models.sh
+fi
 
 echo
 echo "Done. Run: uv run lipflow doctor && uv run lipflow"

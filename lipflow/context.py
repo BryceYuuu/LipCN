@@ -60,35 +60,75 @@ def extract_names(*texts: str, limit: int = 30) -> list[str]:
     return out[:limit]
 
 
-def _capture_linux(ctx: Context) -> Context:
-    """Linux: active window title (Hyprland via hyprctl, X11 via xdotool). No focused-field text."""
+def _focused_node(node: dict):
+    """The focused window in a swaymsg / i3 tree."""
+    if not isinstance(node, dict):
+        return None
+    if node.get("focused"):
+        return node
+    for key in ("nodes", "floating_nodes"):
+        for child in node.get(key) or []:
+            found = _focused_node(child)
+            if found is not None:
+                return found
+    return None
+
+
+def _run_json(args: list[str]):
     import json
+    import subprocess
+    r = subprocess.run(args, capture_output=True, text=True, timeout=1, check=False)
+    if r.returncode != 0 or not r.stdout.strip():
+        return None
+    return json.loads(r.stdout)
+
+
+def _capture_linux(ctx: Context) -> Context:
+    """Active window title only. Hyprland, Sway, KDE, then X11.
+
+    Each tool is skipped when it is missing or fails, so a Hyprland binary on an X11 session
+    still falls through to xdotool. GNOME has no stable title API.
+    """
     import shutil
     import subprocess
 
+    got = False
     if shutil.which("hyprctl"):
         try:
-            r = subprocess.run(
-                ["hyprctl", "activewindow", "-j"],
-                capture_output=True,
-                text=True,
-                timeout=1,
-                check=False,
-            )
-            if r.returncode == 0 and r.stdout.strip():
-                data = json.loads(r.stdout)
+            data = _run_json(["hyprctl", "activewindow", "-j"])
+            if isinstance(data, dict):
                 ctx.title = str(data.get("title") or "")
                 ctx.app = str(data.get("class") or "")
+                got = bool(ctx.title or ctx.app)
         except Exception:
             pass
-    elif shutil.which("xdotool"):
+    if not got and shutil.which("swaymsg"):
+        try:
+            tree = _run_json(["swaymsg", "-t", "get_tree"])
+            node = _focused_node(tree) if isinstance(tree, dict) else None
+            if node is not None:
+                ctx.title = str(node.get("name") or "")
+                props = node.get("window_properties") or {}
+                ctx.app = str(node.get("app_id") or props.get("class") or "")
+                got = bool(ctx.title or ctx.app)
+        except Exception:
+            pass
+    if not got and shutil.which("kdotool"):
+        try:
+            r = subprocess.run(
+                ["kdotool", "getactivewindow", "getwindowname"],
+                capture_output=True, text=True, timeout=1, check=False,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                ctx.title = r.stdout.strip()
+                got = True
+        except Exception:
+            pass
+    if not got and shutil.which("xdotool"):
         try:
             r = subprocess.run(
                 ["xdotool", "getactivewindow", "getwindowname"],
-                capture_output=True,
-                text=True,
-                timeout=1,
-                check=False,
+                capture_output=True, text=True, timeout=1, check=False,
             )
             if r.returncode == 0:
                 ctx.title = r.stdout.strip()
