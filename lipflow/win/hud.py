@@ -82,8 +82,7 @@ class HUD:
         self.c.itemconfigure(self.dot, fill=STATES.get(mode, AMBER))
         self.c.itemconfigure(self.title, text=title.upper())
         if mode != "listening":
-            self.c.itemconfigure(self.video_item, state="hidden")
-            self._img = None
+            self._clear_video()
             self._layout(video=False)
         self.set_text(body)
         self._show_window()
@@ -108,8 +107,7 @@ class HUD:
     def hide(self):
         self._cancel_hide()
         self.mode = ""
-        self._img = None
-        self.c.itemconfigure(self.video_item, state="hidden")
+        self._clear_video()
         if not self._visible:
             return
         self._visible = False
@@ -126,6 +124,11 @@ class HUD:
         self.c.coords(self.title, x + 20, 27)
         self.c.coords(self.body, x, 54)
         self.c.itemconfigure(self.body, width=W - x - 22)
+
+    def _clear_video(self):
+        # Detach the image before dropping our reference: tk deletes a PhotoImage once Python lets go.
+        self.c.itemconfigure(self.video_item, state="hidden", image="")
+        self._img = None
 
     def _show_window(self):
         if self._visible:

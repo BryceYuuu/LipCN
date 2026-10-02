@@ -61,7 +61,7 @@ def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
 
     class R:
-        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt").read().splitlines()] + ["<eos>"]
+        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt", encoding="utf-8").read().splitlines()] + ["<eos>"]
     r = R()
     unk = r.token_list.index("<unk>")
     assert unk not in _targets(r, "Hello, Miguel. It's done!")
