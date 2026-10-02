@@ -65,11 +65,12 @@ def set_text(text: str):
 
 
 def _press_ctrl_v():
-    from pynput.keyboard import Controller, Key
+    from pynput.keyboard import Controller, Key, KeyCode
+    v = KeyCode.from_vk(0x56)  # the V key itself: on a Russian or Greek layout there's no "v" character
     kb = Controller()
     with kb.pressed(Key.ctrl):
-        kb.press("v")
-        kb.release("v")
+        kb.press(v)
+        kb.release(v)
 
 
 def paste_text(text: str, restore_after: float = 0.6):

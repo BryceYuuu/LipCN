@@ -150,7 +150,7 @@ class Lipflow:
             Item(lambda item: f"Cleanup: {self.cleaner.describe()}", None, enabled=False),
             Menu.SEPARATOR,
             Item("Copy last dictation", lambda icon, item: self.ui(self._copy_last)),
-            Item("Practice & train more…", lambda icon, item: self.ui(self.show_setup, "practice")),
+            Item("Practice && train more…", lambda icon, item: self.ui(self.show_setup, "practice")),
             Item("Run setup again…", lambda icon, item: self.ui(self.show_setup)),
             Menu.SEPARATOR,
             Item("Camera", Menu(*[pick_camera(v) for v in ["auto", *range(CAMERAS)]])),
@@ -192,6 +192,7 @@ class Lipflow:
         self.settings["camera"] = value
         save_settings(self.settings)
         self.camera.set_source(value)
+        self.icon.update_menu()  # pystray rebuilt it before this queued change ran
         print(f"[lipflow] camera: {value}")
 
     def _pick_key(self, name):
@@ -200,6 +201,7 @@ class Lipflow:
         self.settings["key"] = name
         save_settings(self.settings)
         self._install_key()
+        self.icon.update_menu()
         self.hud.show("done", "Push-to-talk key", f"Hold {self.key_name} to dictate", 2.0)
 
     def _whisper_changed(self):
@@ -438,11 +440,12 @@ class Lipflow:
 
     def _final(self, rec: Recording):
         t0 = time.time()
+        ob = self.onboarding  # the setup window can be closed meanwhile on the tk thread
         problem = clip_problem(rec)
-        if problem and self.onboarding is not None:
+        if problem and ob is not None:
             print(f"[lipflow] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
-            self.ui(self.onboarding.clip_done, False, f"{problem[0]}. {problem[1]}.")
+            self.ui(ob.clip_done, False, f"{problem[0]}. {problem[1]}.")
             self.ui(self.hud.hide)
             return
         if problem:
@@ -453,10 +456,10 @@ class Lipflow:
         rois = rois_for(rec)
         enc = self.reader.encode(rois)
         t_enc = time.time() - t0
-        if self.onboarding is not None:  # practice clip: keep it with its known text, don't paste
+        if ob is not None:  # practice clip: keep it with its known text, don't paste
             raw = self.reader.greedy(enc)
             print(f"[lipflow] practice clip saved ({rec.duration:.1f}s): {raw!r}")
-            self.ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
+            self.ui(ob.clip_done, True, "", rois, self.onboarding_text, raw)
             self.ui(self.hud.hide)
             return
         # Whisper mode reads empty when there's no audible whisper (silent mouthing): fall back to lips
