@@ -26,6 +26,9 @@ open /Applications/Lipflow.app
 The first launch opens setup, which takes about 8 minutes:
 
 1. **Permissions:** Camera, Input Monitoring and Accessibility, each asked once for "Lipflow".
+   The app is a small signed program that loads this checkout in-process, so those
+   permissions belong to Lipflow rather than to Python. If you turn a switch on while
+   setup is already open, Lipflow restarts itself once and Continue unlocks.
 2. **Your words:** if you use Wispr Flow, it imports your dictation history (read locally, never
    uploaded) to learn your phrasing and the names you say.
 3. **Practice:** you silently mouth 24 sentences (taken from your own history when available).
