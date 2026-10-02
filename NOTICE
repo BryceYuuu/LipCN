@@ -25,6 +25,15 @@ Optional Mandarin support:
   https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages/blob/master/LICENSE
   CMLR dataset use is also research-only: https://www.vipazoo.cn/CMLR.html
   No additional code is copied from that source project by this adaptation.
+- scripts/evaluate_cnvsrc.py is an optional, separately written pure-visual research
+  comparison adapter using the existing Apache-licensed ESPnet modules. It uses
+  verified functional architecture parameters and reads the vocabulary from the author's pinned
+  CNVSRC2025 sources and requires separately downloaded weights; it does not import
+  or redistribute the author's source code, vocabulary files or model weights:
+  https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR
+  https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE
+  https://huggingface.co/ReflectionL/CNVSRC2025Baseline
+  Their research/benchmarking restrictions are not a commercial product license.
 - Optional Chinese quiet-speech inference uses faster-whisper (MIT), CTranslate2 and
   OpenCC-Python (Apache 2.0), installed as dependencies. Whisper model weights are downloaded
   separately via faster-whisper; check the selected model card. Default model conversion:

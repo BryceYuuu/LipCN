@@ -2,15 +2,58 @@
 
 Local validation on 2026-10-02, Apple M4, macOS, Python 3.12.14. This record describes tests actually run; it is not a claim about user-camera accuracy.
 
+## Second iteration: pure visual free-form Mandarin is not ready
+
+The user selected fully silent, freely spoken Mandarin sentences. Upstream PR #4 was closed before this iteration. No new merge request is submitted by this change.
+
+Engineering corrections:
+
+- Steady 25 fps now preserves every frame. The previous floating-point/searchsorted path could map 150 frames to only 141 distinct frames.
+- CMLR decoding now uses the original author's 0.3 length bonus; English decoding parameters stay the same.
+- Encoder-memory attention caches are cleared for each search, using the active beam decoder. Regression tests reproduce reused storage across sentences and cover the separate AV decoder.
+- Mandarin cannot automatically paste even with large score margins and CTC agreement. Multi-character phrase loops are rejected. The startup UI identifies unvalidated Chinese silent input as a test mode.
+- Batch evaluation retains failed/rejected samples, labels/provenance, file/model hashes and explicit readiness failures. Full-face videos use the live no-face/no-motion/short-clip rules. See [the declared protocol](CHINESE_EVALUATION.md).
+
+### Expanded diagnostic results
+
+All eight author-published AISHELL6 demos were tested: S0128, S0075, S0218 and S0140, both normal and whispered speech. They are 96×96 mouth crops. Only video frames were read; no audio, LLM cleanup, personal weights or reference-derived prompt was used. References are used only for scoring. These previously inspected diagnostic assets are **not independent webcam acceptance data**, and ordinary/whispered mouth movements do not establish deliberately silent-speech performance.
+
+| Model | Raw character errors | CER | Exactly correct sentences | Offered candidates | Warm p50 / p95 processing |
+| --- | --- | --- | --- | --- | --- |
+| CMLR, beam 20, LM 0.3, CTC 0.1, length bonus 0.3 | 156 / 158 | 98.73% | 0 / 8 | 8 / 8 | 0.76 / 1.30 s |
+| CNVSRC2025 research baseline, beam 40, CTC 0.5, no external LM | 133 / 158 | 84.18% | 0 / 8 | 7 / 8 | 1.16 / 1.51 s |
+
+Both reports return `not_ready` and exit 2: accuracy, exact sentence rate, data size, speaker/session coverage, independence and webcam domain fail the declared criteria. Zero automatic acceptance is enforced. Candidate coverage includes wrong text and is not a correctness metric. The newer model is a separately runnable benchmark, not a replacement integrated into the GUI. Its vocabulary covers every reference character; CMLR cannot represent four reference characters (`拂`, `漾`, `嬉`, `籁`), but that alone does not account for the very high error rate.
+
+CNVSRC weights were strictly loaded (850 state entries including the reverse training decoder), with verified checkpoint/config/vocabulary hashes. Two examples were also run using the official implementation: top-five hypotheses matched, with only small floating-point score differences. Clearing cross-utterance caches did not change the eight-model comparison predictions. The official forward-default CTC 0.1 diagnostic was worse (139 / 158 errors); no tuning on these samples is claimed as independent validation.
+
+Sources and pinned model identities:
+
+- [Author demo and dataset provenance](https://zutm.github.io/AISHELL6-Whisper/).
+- CMLR author source commit `5e1405db`, and the verified archives in `lipflow/chinese.py`.
+- [CNVSRC2025 source](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR), commit `e5c4454016ba4eef9e586e77dd58e8981bb5c3e1`.
+- [Separate CNVSRC research weights](https://huggingface.co/ReflectionL/CNVSRC2025Baseline), revision `b16f238d0df860da7e3b9834f959780b1d388f44`; checkpoint SHA256 `577cd9558eea111683a406bc25d69c7161cdb79534c2273fc0d0f044c356231c`.
+
+To compare the separate research model, obtain the pinned author sources and weights locally, review their license, then run:
+
+```bash
+uv run python scripts/evaluate_cnvsrc.py --accept-research-license \
+  --checkpoint /local/model_avg_cncvs_2_3_cnvsrc.pth \
+  --source-dir /local/CNVSRC2025 --manifest eval/manifest.json \
+  --output eval/cnvsrc-results.json
+```
+
+The script verifies the exact three inputs, does not import the author's code, never downloads weights implicitly and does not read audio. Model weights and demo media are not redistributed in this repository.
+
 ## Automated checks
 
-- Existing tests plus new confidence, guard, Chinese text/training, data separation and delivery tests: 72 passed, 10 skipped, including the English real-video regression. The optional CMLR strict-load/synthetic-inference test was included.
-- Python 3.11 minimal-dependency confidence/guard suite 21 passed.
+- Second iteration full suite: 122 passed, 10 skipped, including the English real-video regression and CMLR strict-load/synthetic-inference tests. This tests implementation, not Mandarin recognition accuracy.
+- Python 3.11 minimal-dependency confidence/guard/evaluation suite: 60 passed, 1 optional OpenCV test skipped.
 - Native macOS review panel instantiated, displayed Chinese choices, exposed 1/2/Esc key equivalents, chose the raw candidate and cancelled another review successfully. No text was injected into another app during this check.
 - Source compilation and `git diff --check` passed.
-- Windows GUI, real microphone/camera recording, keyboard-driven selection, actual cross-app paste and personal Chinese face-training accuracy have not been manually validated. The existing Windows workflow exercises shared and platform tests, but results must be inspected on the submitted commit.
+- Windows GUI, real microphone/camera recording, keyboard-driven selection, actual cross-app paste and personal Chinese face-training accuracy have not been manually validated. The existing Windows workflow exercises shared and platform tests; remote CI is not asserted by these local checks.
 
-## Public Mandarin demo experiment
+## First iteration public Mandarin demo experiment
 
 Source: the authors' [AISHELL6-Whisper demo](https://zutm.github.io/AISHELL6-Whisper/), S0128 and S0075. These published videos contain **96×96 mouth crops**, not full faces; full-face detection is inappropriate. No video is redistributed in this PR.
 

@@ -451,7 +451,10 @@ class Lipflow:
             self.ui(self.hud.hide)
             self.ui(self.show_setup)
         else:
-            self.ui(self.hud.show, "done", "Lipflow is ready", f"Hold {self.key_name} and mouth your words", 2.5)
+            if self.opts.language == "zh" and self.opts.input_mode == "silent":
+                self.ui(self.hud.show, "done", "中文唇读测试模式", "自由句子识别尚未通过验收，请逐条核对候选", 6.0)
+            else:
+                self.ui(self.hud.show, "done", "Lipflow is ready", f"Hold {self.key_name} and mouth your words", 2.5)
 
     @property
     def whisper_on(self) -> bool:

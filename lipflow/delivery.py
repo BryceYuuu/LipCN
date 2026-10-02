@@ -11,7 +11,8 @@ def quality_for(rec, rois):
 
 
 def choose_result(hypotheses, greedy, quality, cleaner, ctx, context, policy='review', min_margin=0.5):
-    decision = assess(hypotheses, greedy, quality, policy, min_margin)
+    decision = assess(hypotheses, greedy, quality, policy, min_margin,
+                      language=getattr(cleaner, 'language', 'en'))
     if decision.action == 'retry':
         return decision, None, []
     candidates = [h.text for h in hypotheses]

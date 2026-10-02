@@ -47,7 +47,7 @@ def main(argv=None):
     r.add_argument("--language", choices=["en", "zh"], default=None, help="recognition language (zh: CMLR research model)")
     r.add_argument("--cleanup-mode", choices=["faithful", "polish"], default=None)
     r.add_argument("--confidence-policy", choices=["review", "auto"], default=None,
-                   help="review by default; auto uses uncalibrated score/quality/CTC heuristics")
+                   help="review by default; English auto uses uncalibrated heuristics; Mandarin always requires review")
     r.add_argument("--min-margin", type=float, default=0.5, help="length-normalized score gap for opt-in auto routing")
     r.add_argument("--input-mode", choices=["silent", "whisper"], default=None,
                    help="zh whisper: quiet-speech ASR with a visual quality gate, not neural AV fusion")
