@@ -58,7 +58,7 @@ class AVReader(LipReader):
         from safetensors.torch import load_file
         from espnet.nets.pytorch_backend.e2e_asr_transformer_av import E2E as AVE2E
         from espnet.nets.scorers.ctc import CTCPrefixScorer
-        cfg = json.load(open(os.path.join(AV_DIR, "config.json")))
+        cfg = json.load(open(os.path.join(AV_DIR, "config.json"), encoding="utf-8"))
         args = argparse.Namespace(**cfg, report_cer=False, report_wer=False, char_list=None,
                                   sym_space=" ", sym_blank="<blank>")
         av = AVE2E(cfg["odim"], args)

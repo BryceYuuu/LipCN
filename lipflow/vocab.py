@@ -20,10 +20,10 @@ Lipflow
 def load() -> list[str]:
     if not os.path.exists(PATH):
         os.makedirs(os.path.dirname(PATH), exist_ok=True)
-        with open(PATH, "w") as f:
+        with open(PATH, "w", encoding="utf-8") as f:
             f.write(_TEMPLATE)
     words = []
-    for line in open(PATH):
+    for line in open(PATH, encoding="utf-8"):
         line = line.strip()
         if line and not line.startswith("#"):
             words.append(line)

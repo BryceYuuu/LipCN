@@ -3,10 +3,11 @@ LIPFLOW_TEST_PASTE=1 uv run pytest tests/test_paste.py"""
 import os
 
 import pytest
-import Quartz
-from AppKit import NSPasteboard, NSPasteboardTypeString
 
-import lipflow.paste as P
+Quartz = pytest.importorskip("Quartz")
+from AppKit import NSPasteboard, NSPasteboardTypeString  # noqa: E402
+
+import lipflow.paste as P  # noqa: E402
 
 pytestmark = pytest.mark.skipif(os.environ.get("LIPFLOW_TEST_PASTE") != "1",
                                 reason="presses ⌘V for real; set LIPFLOW_TEST_PASTE=1")

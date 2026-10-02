@@ -51,7 +51,7 @@ def test_vocab_edit_guard():
 
 def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
     import lipflow.personal as P
-    from lipflow import onboarding as O
+    from lipflow import practice as O
     monkeypatch.setattr(P, "PHRASES", str(tmp_path / "none.txt"))
     s = O.practice_sentences(24)
     assert len(s) == 24 and len(set(s)) == 24 and all(x in O.HARVARD for x in s)
@@ -61,7 +61,7 @@ def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
 
     class R:
-        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt").read().splitlines()] + ["<eos>"]
+        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt", encoding="utf-8").read().splitlines()] + ["<eos>"]
     r = R()
     unk = r.token_list.index("<unk>")
     assert unk not in _targets(r, "Hello, Miguel. It's done!")
@@ -69,7 +69,7 @@ def test_training_targets_drop_punctuation():
 
 def test_practice_mixes_own_and_harvard(tmp_path, monkeypatch):
     import lipflow.personal as P
-    from lipflow import onboarding as O
+    from lipflow import practice as O
     f = tmp_path / "phrases.txt"
     f.write_text("\n".join(f"This is my own sentence number {w} for testing" for w in
                            "one two three four five six seven eight nine ten eleven twelve thirteen fourteen".split()))
@@ -96,7 +96,7 @@ def test_context_names_from_titles():
 
 
 def test_snapping_leaves_every_harvard_sentence_alone():
-    from lipflow.onboarding import HARVARD
+    from lipflow.practice import HARVARD
     from lipflow.visemes import snap_names
     for h in HARVARD:
         assert snap_names(h.upper(), ["Priya", "Miguel", "Vizcom", "Balance", "Flow"], lambda w: False) == h.upper()

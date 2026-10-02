@@ -99,11 +99,11 @@ def train(epochs: int = 3, lr: float = 3e-5, bs: int = 32, max_general_loss: flo
     if not os.path.exists(PHRASES):
         raise FileNotFoundError("No phrases yet. Run `lipflow import-wispr` first.")
     units = os.path.join(os.path.dirname(__file__), "unigram5000_units.txt")
-    token_list = ["<blank>"] + [l.split()[0] for l in open(units).read().splitlines()] + ["<eos>"]
+    token_list = ["<blank>"] + [l.split()[0] for l in open(units, encoding="utf-8").read().splitlines()] + ["<eos>"]
     eos = len(token_list) - 1
     tok = Tok(token_list)
 
-    sents = sorted({s for line in open(PHRASES) for s in normalise(line)})
+    sents = sorted({s for line in open(PHRASES, encoding="utf-8") for s in normalise(line)})
     random.shuffle(sents)
     seqs = [tok(s)[:58] for s in sents]
     n_val = max(20, len(seqs) // 10)

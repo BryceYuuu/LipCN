@@ -52,7 +52,7 @@ class LipReader:
             confs = json.load(f)
         args = argparse.Namespace(**(confs if isinstance(confs, dict) else confs[2]))
         units = os.path.join(os.path.dirname(__file__), "unigram5000_units.txt")
-        self.token_list = ["<blank>"] + [l.split()[0] for l in open(units).read().splitlines()] + ["<eos>"]
+        self.token_list = ["<blank>"] + [l.split()[0] for l in open(units, encoding="utf-8").read().splitlines()] + ["<eos>"]
         odim = len(self.token_list)
 
         self.model = E2E(odim, args)
