@@ -53,9 +53,9 @@ def test_wayland_clipboard_and_paste_use_wl_tools(monkeypatch):
     monkeypatch.setenv("XDG_SESSION_TYPE", "wayland")
     monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
     calls = _stub_tools(monkeypatch, paste, {"wl-copy", "wl-paste", "wtype", "xclip", "xdotool"})
-    paste.set_text("hi")
+    paste.set_text("-5 degrees")
     paste._press_ctrl_v()
-    assert calls[0][0] == ["wl-copy", "hi"]
+    assert calls[0][0] == ["wl-copy"] and calls[0][1]["input"] == "-5 degrees"
     assert calls[1][0] == ["wtype", "-M", "ctrl", "-k", "v"]
 
 

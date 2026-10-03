@@ -22,17 +22,17 @@ def wayland_session() -> bool:
 
 def get_text() -> str | None:
     if wayland_session() and shutil.which("wl-paste"):
-        r = subprocess.run(["wl-paste", "-n"], capture_output=True, text=True)
+        r = subprocess.run(["wl-paste", "-n"], capture_output=True, text=True, timeout=2)
         return r.stdout if r.returncode == 0 else None
     if shutil.which("xclip"):
-        r = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True)
+        r = subprocess.run(["xclip", "-selection", "clipboard", "-o"], capture_output=True, text=True, timeout=2)
         return r.stdout if r.returncode == 0 else None
     return None
 
 
 def set_text(text: str) -> None:
     if wayland_session() and shutil.which("wl-copy"):
-        subprocess.run(["wl-copy", text], check=True)
+        subprocess.run(["wl-copy"], input=text, text=True, check=True)  # stdin: text may start with "-"
         return
     if shutil.which("xclip"):
         subprocess.run(["xclip", "-selection", "clipboard"], input=text, text=True, check=True)
@@ -72,7 +72,7 @@ def paste_text(text: str, restore_after: float = 0.6) -> None:
         return
     try:
         saved = get_text()
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
         saved = None
     set_text(text)
     _press_ctrl_v()
