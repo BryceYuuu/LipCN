@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 
 from .vsr import MODELS
@@ -16,11 +17,17 @@ def doctor() -> int:
         ok &= bool(good)
         print(f"  {'✓' if good else '✗'} {what}" + ("" if good else f"\n      → {fix}"))
 
+    if sys.platform == "win32":
+        fix_models = "run .\\setup.ps1"
+    elif sys.platform == "linux":
+        fix_models = "run ./scripts/download-models.sh"
+    else:
+        fix_models = "run ./setup.sh"
+
     print("Lipflow doctor\n")
     for rel, size in [("vsr/model.pth", 900e6), ("lm/model.pth", 200e6), ("face_landmarker.task", 3e6)]:
         path = os.path.join(MODELS, rel)
-        line(os.path.exists(path) and os.path.getsize(path) > size, f"model file {rel}",
-             "run .\\setup.ps1" if sys.platform == "win32" else "run ./setup.sh")
+        line(os.path.exists(path) and os.path.getsize(path) > size, f"model file {rel}", fix_models)
 
     import torch
     dev = "cuda (NVIDIA GPU)" if torch.cuda.is_available() else \
@@ -29,6 +36,8 @@ def doctor() -> int:
 
     if sys.platform == "win32":
         _windows_checks(line)
+    elif sys.platform == "linux":
+        _linux_checks(line)
     else:
         _mac_checks(line)
 
@@ -66,3 +75,33 @@ def _windows_checks(line):
     line(ok, f"Camera {idx} opens and sends frames",
          "Settings → Privacy & security → Camera → turn on \"Let desktop apps access your camera\", "
          "and close other apps using the camera")
+
+
+def _linux_checks(line):
+    from .linux.paste import wayland_session
+    if wayland_session():
+        from .linux.hotkey import keyboards_readable
+        line(shutil.which("wl-copy") is not None, "wl-copy (clipboard)",
+             "install wl-clipboard")
+        line(any(shutil.which(tool) for tool in ("wtype", "ydotool", "dotool")),
+             "Wayland paste (wtype, ydotool, or dotool)",
+             "install wtype (Hyprland, Sway) or ydotool with ydotoold running (GNOME, KDE, other Wayland)")
+        line(keyboards_readable(), "Wayland push-to-talk key (/dev/input)",
+             "add your user to the input group and log in again")
+    else:
+        line(shutil.which("xclip") is not None, "xclip (clipboard)",
+             "install xclip")
+        line(shutil.which("xdotool") is not None, "xdotool (paste at cursor)",
+             "install xdotool")
+    line(shutil.which("wl-paste") is not None or shutil.which("xclip") is not None,
+         "clipboard read (optional, for restore)", "same as above")
+
+    import cv2
+    from .camera import resolve_camera
+    from .dictation import load_settings
+    idx = resolve_camera(load_settings().get("camera", "auto"))
+    cap = cv2.VideoCapture(idx)
+    ok = cap.isOpened() and cap.read()[0]
+    cap.release()
+    line(ok, f"Camera {idx} opens and sends frames",
+         "check PipeWire/v4l2, close other apps using the camera, try --camera 0")

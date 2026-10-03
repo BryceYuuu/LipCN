@@ -1,7 +1,8 @@
 """The floating pill above the taskbar: what Lipflow is doing, live words, and your mouth while you talk.
 
-A borderless always-on-top tk window that never takes focus (WS_EX_NOACTIVATE), so Ctrl+V still
-lands in the app you're dictating into. Main (tk) thread only.
+A borderless always-on-top tk window that never takes focus, so Ctrl+V still lands in the app
+you're dictating into. Windows uses WS_EX_NOACTIVATE and a colour-key. Linux uses an EWMH
+notification window; Tk has no colour-key there, so the pill background is solid. Main (tk) thread only.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ VIDEO_W, VIDEO_H = 112, 70
 KEY = "#ff00fe"  # transparent colour: everything outside the rounded rectangle
 BG, FG, DIM = "#1d1b20", "#ffffff", "#b9b4bf"
 ACCENT, GREEN, AMBER, RED = "#ff5473", "#4dd98c", "#ffb840", "#ff6b5e"
-FONT = "Segoe UI"
+FONT = "Segoe UI" if sys.platform == "win32" else "sans"
 STATES = {"listening": ACCENT, "reading": AMBER, "done": GREEN, "error": RED}
 
 
@@ -32,7 +33,14 @@ def photo(bgr: np.ndarray):
 
 
 def no_activate(win: tk.Toplevel) -> "int | None":
-    """Make a tk toplevel a tool window that never steals focus. Returns its HWND."""
+    """Make a tk toplevel never steal focus. Returns its HWND on Windows."""
+    if sys.platform == "linux":
+        try:
+            # Compositors do not activate EWMH notification windows.
+            win.attributes("-type", "notification")
+        except tk.TclError:
+            pass
+        return None
     if sys.platform != "win32":
         return None
     import ctypes
@@ -53,14 +61,17 @@ class HUD:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.win = tk.Toplevel(root)
+        if sys.platform == "linux":
+            self.win.withdraw()  # map it only after the notification type is set
         self.win.overrideredirect(True)
         self.win.attributes("-topmost", True)
-        self.win.configure(bg=KEY)
+        chrome = KEY if sys.platform == "win32" else BG
+        self.win.configure(bg=chrome)
         if sys.platform == "win32":
             self.win.attributes("-transparentcolor", KEY)
         sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
         self.win.geometry(f"{W}x{H}+{(sw - W) // 2}+{sh - H - 96}")  # above the taskbar
-        c = self.c = tk.Canvas(self.win, width=W, height=H, bg=KEY, highlightthickness=0)
+        c = self.c = tk.Canvas(self.win, width=W, height=H, bg=chrome, highlightthickness=0)
         c.pack()
         rounded_rect(c, 2, 2, W - 2, H - 2, 26, fill=BG, outline="#3a3640")
         self.dot = c.create_oval(22, 22, 32, 32, fill=AMBER, outline="")
@@ -141,7 +152,13 @@ class HUD:
             # HWND_TOPMOST, no move/size/activate
             user32.SetWindowPos(ctypes.c_void_p(self.hwnd), ctypes.c_void_p(-1), 0, 0, 0, 0, 0x1 | 0x2 | 0x10)
         else:
+            if sys.platform == "linux":
+                try:
+                    self.win.attributes("-type", "notification")
+                except tk.TclError:
+                    pass
             self.win.deiconify()
+            self.win.attributes("-topmost", True)
 
     def _cancel_hide(self):
         if self._hide_job is not None:

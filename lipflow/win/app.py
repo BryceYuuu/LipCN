@@ -1,8 +1,9 @@
-"""Lipflow for Windows: a tray icon. Hold a key, mouth the words, let go — the text appears at your cursor.
+"""Lipflow tray app (Windows and Linux). Hold a key, mouth the words, let go — the text appears at your cursor.
 
 Threads: tk owns the main thread (overlay, setup window); pynput's hook thread reports the key;
 pystray runs the tray menu on its own thread; one model thread reads lips. Everything that touches
-tk goes through ui(), which queues it for the main thread.
+tk goes through ui(), which queues it for the main thread. Linux paste is wl-copy/wtype, or
+xclip/xdotool on X11 (lipflow/linux/paste.py).
 """
 from __future__ import annotations
 
@@ -25,7 +26,11 @@ from ..paths import HOME
 from ..vsr import LipReader
 from .hotkey import DEFAULT_KEY, KEYS, PushToTalk
 from .hud import HUD, tray_image
-from .paste import copy_text, paste_text
+
+if sys.platform == "linux":
+    from ..linux.paste import copy_text, paste_text
+else:
+    from .paste import copy_text, paste_text
 
 LOG = os.path.join(HOME, "Lipflow.log")
 CAMERAS = 4  # Windows can't name cameras through OpenCV: offer the first few by number
@@ -144,6 +149,14 @@ class Lipflow:
             return Item(key_label(name), lambda icon, item: self.ui(self._pick_key, name),
                         checked=lambda item: self.opts.key == name, radio=True)
 
+        autostart = []
+        if sys.platform == "win32":
+            autostart = [
+                Item("Start with Windows", lambda icon, item: self._toggle_autostart(),
+                     checked=lambda item: self._autostart_enabled()),
+                Menu.SEPARATOR,
+            ]
+
         menu = Menu(
             Item(lambda item: self.state_text, None, enabled=False),
             Item(lambda item: f"Hold {self.key_name} to dictate, double-tap for hands-free", None, enabled=False),
@@ -158,9 +171,7 @@ class Lipflow:
             toggle("whisper", False, then=lambda: self.ui(self._whisper_changed)),
             toggle("use_context"),
             toggle("save_clips"),
-            Item("Start with Windows", lambda icon, item: self._toggle_autostart(),
-                 checked=lambda item: self._autostart_enabled()),
-            Menu.SEPARATOR,
+            *autostart,
             Item("Open history", lambda icon, item: self._notepad(HISTORY)),
             Item("Edit custom words…", lambda icon, item: self._edit_words()),
             Item("Open log", lambda icon, item: self._notepad(LOG)),
@@ -192,7 +203,7 @@ class Lipflow:
         self.settings["camera"] = value
         save_settings(self.settings)
         self.camera.set_source(value)
-        self.icon.update_menu()  # pystray rebuilt it before this queued change ran
+        self.icon.update_menu()
         print(f"[lipflow] camera: {value}")
 
     def _pick_key(self, name):
@@ -212,7 +223,10 @@ class Lipflow:
     def _notepad(path):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         open(path, "a", encoding="utf-8").close()
-        subprocess.Popen(["notepad.exe", path])
+        if sys.platform == "win32":
+            subprocess.Popen(["notepad.exe", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
 
     def _edit_words(self):
         from .. import vocab
@@ -227,6 +241,8 @@ class Lipflow:
         return f'"{exe}" -X utf8 -m lipflow'
 
     def _autostart_enabled(self) -> bool:
+        if sys.platform != "win32":
+            return False
         import winreg
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
@@ -236,6 +252,8 @@ class Lipflow:
             return False
 
     def _toggle_autostart(self):  # tray thread; registry only
+        if sys.platform != "win32":
+            return
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
             if self._autostart_enabled():
@@ -532,7 +550,7 @@ def _already_running() -> bool:
 def run(opts: Options):
     if sys.stdout is None or os.environ.get("LIPFLOW_APP"):
         _log_to_file()
-    if _already_running():
+    if sys.platform == "win32" and _already_running():
         import ctypes
         ctypes.WinDLL("user32").MessageBoxW(None, "Lipflow is already running. Look for the pink mouth icon "
                                                   "in the system tray (you may need to click ^ to see it).",
