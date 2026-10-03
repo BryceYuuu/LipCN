@@ -96,21 +96,22 @@ pasted into is read. Switch it off in Settings.
 Lip reading can't tell apart words that look the same on the lips (p/b/m, f/v, t/d/n…), so the raw
 model output reads like "WALLET OFFICER" when you said "while in office". Lipflow sends the model's
 top-3 guesses plus your last few dictations to an LLM, which picks the sentence you meant and
-fixes casing, punctuation and numbers. The first backend that's available is used:
+fixes casing, punctuation and numbers. You choose which one under **Cleanup** in the menu bar (tray
+on Windows), or with `--cleanup <name>` for one run. **Automatic**, the default, uses Claude if you've
+set a key, otherwise the on-device model, otherwise the offline rules.
 
 1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
    `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
    mis-read sentences.
-2. **Codex** (ChatGPT subscription): Install the [Codex CLI](https://developers.openai.com/codex/cli)
-   (`curl -fsSL https://chatgpt.com/codex/install.sh | sh` or `brew install --cask codex` or
-   `npm install -g @openai/codex`), run `codex login` (sign in with ChatGPT), then Lipflow will
-   use your ChatGPT subscription for cleanup. No API key required. The CLI stores credentials in
-   `~/.codex/auth.json`.
-3. **Local** (the default without a key or subscription): Qwen3-0.6B 4-bit running in-process on Apple Silicon
+2. **ChatGPT (Codex CLI)**: uses your ChatGPT plan, no API key. Install the
+   [Codex CLI](https://developers.openai.com/codex/cli) (`brew install --cask codex` or
+   `npm install -g @openai/codex`), run `codex login`, then pick it in the menu. Each sentence is one
+   read-only `codex exec` run in an empty folder. Override the model with `LIPFLOW_CODEX_MODEL`.
+3. **On-device model**: Qwen3-0.6B 4-bit running in-process on Apple Silicon
    via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
    Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
    worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
-4. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
+4. **Ollama**: `ollama pull qwen3:4b`, then pick it in the menu (override with `LIPFLOW_OLLAMA_MODEL`).
 5. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
 
 **Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.

@@ -16,7 +16,7 @@ import tkinter as tk
 from dataclasses import dataclass
 
 from ..camera import Camera, Recording, mouth_view
-from ..cleanup import Cleaner
+from ..cleanup import CHOICES, Cleaner, unavailable
 from ..dictation import (
     HISTORY, JOIN_WINDOW, MAX_SECONDS, PREVIEW_EVERY, TAIL_SECONDS, clip_problem, keep_clip, load_settings,
     log_history, rois_for, save_settings, train_on_face,
@@ -57,7 +57,9 @@ class Lipflow:
         self.root.withdraw()
         self._q: "queue.Queue" = queue.Queue()
         self.reader: LipReader | None = None
-        self.cleaner = Cleaner(opts.backend)
+        # --cleanup wins for this run; otherwise what you last picked in the tray menu
+        self.cleanup_choice = opts.backend if opts.backend != "auto" else self.settings.get("cleanup", "auto")
+        self.cleaner = Cleaner(self.cleanup_choice)
         self.jobs: "queue.Queue" = queue.Queue()
         self.session = 0          # bumps on every start/cancel so stale previews are dropped
         self.preview_busy = False
@@ -140,6 +142,12 @@ class Lipflow:
                         lambda icon, item: self.ui(self._pick_camera, value),
                         checked=lambda item: self.settings.get("camera", "auto") == value, radio=True)
 
+        def pick_cleanup(name):
+            why = unavailable(name)
+            return Item(CHOICES[name] + (f" ({why})" if why else ""),
+                        lambda icon, item: self.ui(self._pick_cleanup, name),
+                        checked=lambda item: self.cleanup_choice == name, radio=True, enabled=why is None)
+
         def pick_key(name):
             return Item(key_label(name), lambda icon, item: self.ui(self._pick_key, name),
                         checked=lambda item: self.opts.key == name, radio=True)
@@ -154,6 +162,7 @@ class Lipflow:
             Item("Run setup again…", lambda icon, item: self.ui(self.show_setup)),
             Menu.SEPARATOR,
             Item("Camera", Menu(*[pick_camera(v) for v in ["auto", *range(CAMERAS)]])),
+            Item("Cleanup", Menu(*[pick_cleanup(b) for b in CHOICES])),
             Item("Push-to-talk key", Menu(*[pick_key(k) for k in KEYS])),
             toggle("whisper", False, then=lambda: self.ui(self._whisper_changed)),
             toggle("use_context"),
@@ -194,6 +203,12 @@ class Lipflow:
         self.camera.set_source(value)
         self.icon.update_menu()  # pystray rebuilt it before this queued change ran
         print(f"[lipflow] camera: {value}")
+
+    def _pick_cleanup(self, name):
+        self.cleanup_choice = self.settings["cleanup"] = name
+        save_settings(self.settings)
+        self.icon.update_menu()
+        self.jobs.put(("cleanup", name))  # on the model thread, between dictations
 
     def _pick_key(self, name):
         self.ptt.stop()
@@ -374,6 +389,10 @@ class Lipflow:
                     self._train(job[1])
                 elif job[0] == "whisper":
                     self._load_whisper()
+                elif job[0] == "cleanup":
+                    self.cleaner = Cleaner(job[1])
+                    print(f"[lipflow] cleanup: {self.cleaner.describe()}")
+                    self.ui(self.icon.update_menu)
             except Exception as e:
                 import traceback
                 traceback.print_exc()

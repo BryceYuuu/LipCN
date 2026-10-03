@@ -19,7 +19,7 @@ from Foundation import NSObject
 from PyObjCTools import AppHelper
 
 from .camera import Camera, Recording, mouth_view
-from .cleanup import Cleaner
+from .cleanup import CHOICES, Cleaner, unavailable
 from .face import mouth_rois
 from .hotkey import KEYS, PushToTalk
 from .hud import HUD, symbol
@@ -58,7 +58,10 @@ class Lipflow(NSObject):
             return None
         self.opts = opts
         self.reader: LipReader | None = None
-        self.cleaner = Cleaner(opts.backend)
+        self.settings = load_settings()
+        # --cleanup wins for this run; otherwise what you last picked in the menu
+        self.cleanup_choice = opts.backend if opts.backend != "auto" else self.settings.get("cleanup", "auto")
+        self.cleaner = Cleaner(self.cleanup_choice)
         self.jobs: "queue.Queue" = queue.Queue()
         self.session = 0          # bumps on every start/cancel so stale previews are dropped
         self.preview_busy = False
@@ -75,7 +78,6 @@ class Lipflow(NSObject):
         self.onboarding_text = ""
         self.setup = None
         self.loading = True
-        self.settings = load_settings()
         cam = opts.camera if opts.camera != "auto" else self.settings.get("camera", "auto")
         if opts.key == "right_option" and self.settings.get("key"):
             opts.key = self.settings["key"]
@@ -121,7 +123,7 @@ class Lipflow(NSObject):
         self.state_item = self._item(menu, "Loading model…", None, icon="hourglass")
         key_name = self.opts.key.replace("_", " ").title()
         self._item(menu, f"Hold {key_name} to dictate, double-tap for hands-free", None, icon="keyboard")
-        self._item(menu, f"Cleanup: {self.cleaner.describe()}", None, icon="text.badge.checkmark")
+        self._cleanup_menu(menu)
         n = len(self.cleaner.personal.phrases)
         self._item(menu, f"Personalised from {n:,} of your phrases" if n else
                    "Not personalised yet: run lipflow import-wispr", None, icon="person.text.rectangle")
@@ -157,6 +159,33 @@ class Lipflow(NSObject):
             sub.addItem_(it)
             self.cam_items.append(it)
         parent.setSubmenu_(sub)
+
+    @objc.python_method
+    def _cleanup_menu(self, menu):
+        self.cleanup_item = self._item(menu, f"Cleanup: {self.cleaner.describe()}", None, icon="text.badge.checkmark")
+        self.cleanup_item.setEnabled_(True)
+        sub = NSMenu.alloc().init()
+        sub.setAutoenablesItems_(False)  # so items that aren't set up stay greyed out
+        self.cleanup_items = []
+        for name, label in CHOICES.items():
+            why = unavailable(name)
+            it = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(label + (f" ({why})" if why else ""),
+                                                                          "pickCleanup:", "")
+            it.setTarget_(self)
+            it.setRepresentedObject_(name)
+            it.setEnabled_(why is None)
+            it.setState_(1 if name == self.cleanup_choice else 0)
+            sub.addItem_(it)
+            self.cleanup_items.append(it)
+        self.cleanup_item.setSubmenu_(sub)
+
+    def pickCleanup_(self, sender):
+        name = sender.representedObject()
+        self.cleanup_choice = self.settings["cleanup"] = name
+        save_settings(self.settings)
+        for it in self.cleanup_items:
+            it.setState_(1 if it.representedObject() == name else 0)
+        self.jobs.put(("cleanup", name))  # on the model thread, between dictations
 
     def pickCamera_(self, sender):
         cam_id = sender.representedObject()
@@ -348,6 +377,11 @@ class Lipflow(NSObject):
                     self._train(job[1])
                 elif job[0] == "whisper":
                     self._load_whisper()
+                elif job[0] == "cleanup":
+                    self.cleaner = Cleaner(job[1])
+                    self._warm_cleanup()
+                    print(f"[lipflow] cleanup: {self.cleaner.describe()}")
+                    ui(self.cleanup_item.setTitle_, f"Cleanup: {self.cleaner.describe()}")
                 elif job[0] == "reload":  # e.g. face model reset from Settings
                     self.reader = LipReader(beam_size=self.opts.beam)
                     self.reader.warmup()
@@ -360,17 +394,24 @@ class Lipflow(NSObject):
                     self.preview_busy = False
 
     @objc.python_method
+    def _warm_cleanup(self):
+        if self.cleaner.backend != "local":
+            return
+        try:
+            self.cleaner.warmup()
+        except Exception as e:
+            print(f"[lipflow] local cleanup model unavailable ({e}); using basic cleanup")
+            self.cleaner.backend, self.cleaner.model = "basic", None
+
+    @objc.python_method
     def _load(self):
         t = time.time()
         self.reader = LipReader(beam_size=self.opts.beam)
         self.reader.warmup()
         if self.cleaner.backend == "local":
             ui(self.hud.set_text, "Loading the text-cleanup model…")
-            try:
-                self.cleaner.warmup()
-            except Exception as e:
-                print(f"[lipflow] local cleanup model unavailable ({e}); using basic cleanup")
-                self.cleaner.backend, self.cleaner.model = "basic", None
+        self._warm_cleanup()
+        ui(self.cleanup_item.setTitle_, f"Cleanup: {self.cleaner.describe()}")
         self.loading = False
         print(f"[lipflow] model ready in {time.time() - t:.1f}s "
               f"(encoder on {self.reader.enc_device}, cleanup: {self.cleaner.describe()})")
