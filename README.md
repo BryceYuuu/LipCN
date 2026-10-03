@@ -70,8 +70,8 @@ How it differs from the Mac version:
   CUDA build of PyTorch: `uv pip install torch --index-url https://download.pytorch.org/whl/cu126`
   (re-run it after `uv sync`, which puts the CPU build back).
 - **Cleanup:** the in-process local model is Mac-only (MLX), so use Claude (`setx ANTHROPIC_API_KEY …`,
-  then restart Lipflow) or [Ollama](https://ollama.com) (`ollama pull qwen3:4b`). Without either,
-  Lipflow uses the offline rules.
+  then restart Lipflow), the [Codex CLI](https://www.codexcli.com/) (`codex login`), or
+  [Ollama](https://ollama.com) (`ollama pull qwen3:4b`). Without one of these, Lipflow uses the offline rules.
 - **Names from context:** taken from the window title only (on a Mac it also reads the text
   around your cursor). Learning from your corrections is Mac-only for now.
 - **Start with Windows:** tray menu → *Start with Windows*. Your data lives in `%APPDATA%\Lipflow`
@@ -101,12 +101,15 @@ fixes casing, punctuation and numbers. The first backend that's available is use
 1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
    `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
    mis-read sentences.
-2. **Local** (the default without a key): Qwen3-0.6B 4-bit running in-process on Apple Silicon
+2. **Codex** (ChatGPT subscription): Install the [Codex CLI](https://www.codexcli.com/), run
+   `codex login` (sign in with ChatGPT), then Lipflow will use your ChatGPT subscription for cleanup.
+   No API key required. The CLI stores credentials in `~/.codex/auth.json`.
+3. **Local** (the default without a key or subscription): Qwen3-0.6B 4-bit running in-process on Apple Silicon
    via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
    Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
    worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
-3. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
-4. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
+4. **Ollama**: `--cleanup ollama` with `ollama pull qwen3:4b` (override with `LIPFLOW_OLLAMA_MODEL`).
+5. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
 
 **Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.
 

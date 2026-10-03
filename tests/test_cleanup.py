@@ -100,3 +100,74 @@ def test_snapping_leaves_every_harvard_sentence_alone():
     from lipflow.visemes import snap_names
     for h in HARVARD:
         assert snap_names(h.upper(), ["Priya", "Miguel", "Vizcom", "Balance", "Flow"], lambda w: False) == h.upper()
+
+
+def test_codex_backend_shells_out_to_cli():
+    """Test that codex backend shells out correctly (mocked subprocess)."""
+    from unittest import mock
+    from lipflow.cleanup import Cleaner
+    
+    with mock.patch("lipflow.cleanup.subprocess.run") as mock_run:
+        # Mock successful codex exec call
+        mock_run.return_value = mock.Mock(
+            returncode=0,
+            stdout="Hello, I think this is correct.",
+            stderr=""
+        )
+        
+        c = Cleaner("codex")
+        result = c._codex(["HELLO I THINK THIS IS CORRECT"], "")
+        
+        # Verify subprocess was called with correct args
+        assert mock_run.called
+        call_args = mock_run.call_args
+        assert call_args[0][0] == ["codex", "exec", "--skip-git-repo-check", "-"]
+        assert "capture_output" in call_args[1]
+        assert call_args[1]["timeout"] == 15
+        
+        # Verify result
+        assert result == "Hello, I think this is correct."
+
+
+def test_codex_backend_handles_failures():
+    """Test that codex backend gracefully handles failures."""
+    from unittest import mock
+    from lipflow.cleanup import Cleaner
+    
+    with mock.patch("lipflow.cleanup.subprocess.run") as mock_run:
+        # Test non-zero exit code
+        mock_run.return_value = mock.Mock(returncode=1, stdout="", stderr="error")
+        c = Cleaner("codex")
+        assert c._codex(["HELLO"], "") is None
+        
+        # Test timeout
+        mock_run.side_effect = Exception("timeout")
+        assert c._codex(["HELLO"], "") is None
+
+
+def test_codex_available_checks_cli_and_auth():
+    """Test that _codex_available correctly detects codex CLI and login status."""
+    from unittest import mock
+    from lipflow.cleanup import Cleaner
+    
+    with mock.patch("lipflow.cleanup.shutil.which") as mock_which, \
+         mock.patch("lipflow.cleanup.os.path.exists") as mock_exists, \
+         mock.patch("lipflow.cleanup.subprocess.run") as mock_run:
+        
+        # Test: codex not in PATH
+        mock_which.return_value = None
+        assert not Cleaner._codex_available()
+        
+        # Test: codex in PATH, auth.json exists
+        mock_which.return_value = "/usr/local/bin/codex"
+        mock_exists.return_value = True
+        assert Cleaner._codex_available()
+        
+        # Test: codex in PATH, no auth.json, but `codex login status` succeeds
+        mock_exists.return_value = False
+        mock_run.return_value = mock.Mock(returncode=0)
+        assert Cleaner._codex_available()
+        
+        # Test: codex in PATH, no auth.json, `codex login status` fails
+        mock_run.return_value = mock.Mock(returncode=1)
+        assert not Cleaner._codex_available()
