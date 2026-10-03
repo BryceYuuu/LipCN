@@ -41,7 +41,7 @@ def main(argv=None):
     r = sub.add_parser("run", help="start the dictation app in the menu bar / system tray (default)")
     r.add_argument("--key", default=DEFAULT_KEY, choices=list(KEYS), help="push-to-talk key")
     r.add_argument("--beam", type=int, default=4, help="beam size (higher = slower, about the same accuracy)")
-    r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic"])
+    r.add_argument("--cleanup", default="auto", choices=["auto", "claude", "codex", "local", "ollama", "basic"])
     r.add_argument("--camera", default="auto",
                    help="'auto' (the built-in camera), a camera number, part of a camera's name (Mac), "
                         "or a video file")
@@ -53,7 +53,7 @@ def main(argv=None):
     f.add_argument("--start", type=float, default=0.0)
     f.add_argument("--end", type=float, default=None)
     f.add_argument("--beam", type=int, default=10)
-    f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "local", "ollama", "basic", "none"])
+    f.add_argument("--cleanup", default="auto", choices=["auto", "claude", "codex", "local", "ollama", "basic", "none"])
 
     sub.add_parser("doctor", help="check permissions, camera and model files")
     sub.add_parser("onboard", help="open the setup window (permissions, Wispr import, train on your face)")

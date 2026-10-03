@@ -5,8 +5,10 @@ lips, so the model's guesses are often homophenes of the real words ("WALLET OFF
 for "while in office"). An LLM that sees the top hypotheses plus what you dictated just
 before can usually recover the intended sentence.
 
-Backends, first available wins:
+Backends. You pick one in the menu (saved as "cleanup" in settings) or with --cleanup; "auto" uses
+the first available of claude, local, ollama, basic:
   claude  – ANTHROPIC_API_KEY (or ANTHROPIC_AUTH_TOKEN) set
+  codex   – your ChatGPT plan through the Codex CLI (`codex login`); LIPFLOW_CODEX_MODEL; only if chosen
   local   – a tiny on-device model via MLX (Qwen3-0.6B 4-bit, ~350 MB, ~0.2 s); LIPFLOW_LOCAL_MODEL
   ollama  – a local Ollama server on :11434 (LIPFLOW_OLLAMA_MODEL, default qwen3:4b); only if chosen
   basic   – offline casing + punctuation rules
@@ -16,6 +18,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 
 import requests
 
@@ -165,6 +171,22 @@ def basic_cleanup(text: str) -> str:
     return t
 
 
+# The cleanup menu, in order. "auto" picks for you (see the docstring above).
+CHOICES = {"auto": "Automatic", "claude": "Claude", "codex": "ChatGPT (Codex CLI)", "local": "On-device model",
+           "ollama": "Ollama", "basic": "Basic rules only"}
+
+
+def unavailable(backend: str) -> "str | None":
+    """Why this backend can't be used right now, or None. Cheap: runs when the menu is built."""
+    if backend == "claude" and not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        return "set ANTHROPIC_API_KEY"
+    if backend == "codex" and not shutil.which("codex"):
+        return "install the Codex CLI"
+    if backend == "local" and sys.platform != "darwin":
+        return "Mac only"
+    return None
+
+
 class Cleaner:
     def __init__(self, backend: str = "auto"):
         self.backend = self._pick(backend)
@@ -186,6 +208,8 @@ class Cleaner:
             import anthropic
             self._client = anthropic.Anthropic(timeout=8.0, max_retries=1)
             self.model = os.environ.get("LIPFLOW_MODEL", "claude-opus-5-5")
+        elif self.backend == "codex":
+            self.model = os.environ.get("LIPFLOW_CODEX_MODEL")  # None: Codex's own default
         elif self.backend == "ollama":
             self.model = os.environ.get("LIPFLOW_OLLAMA_MODEL", "qwen3:4b")
 
@@ -198,7 +222,10 @@ class Cleaner:
 
     def _pick(self, backend: str) -> str:
         if backend != "auto":
-            return backend
+            why = unavailable(backend)
+            if why is None:
+                return backend
+            print(f"[cleanup] can't use {backend} ({why}); picking automatically")
         if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"):
             return "claude"
         try:
@@ -254,6 +281,8 @@ class Cleaner:
                 out = self._local(candidates, context)
             elif self.backend == "claude":
                 out = self._claude(candidates, context)
+            elif self.backend == "codex":
+                out = self._codex(candidates, context)
             elif self.backend == "ollama":
                 out = self._ollama(candidates, context)
             else:
@@ -276,6 +305,22 @@ class Cleaner:
         if resp.stop_reason == "refusal":
             return None
         return "".join(b.text for b in resp.content if b.type == "text") or None
+
+    def _codex(self, candidates: list[str], context: str) -> "str | None":
+        """One non-interactive `codex exec` turn on your ChatGPT plan. It runs read-only in an empty
+        folder, so it can't touch your files or pick up a project's AGENTS.md, and leaves no session."""
+        prompt = f"{SYSTEM}\n\n{_user_prompt(candidates, context, self._words, self._similar)}"
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, "reply.txt")
+            args = ["codex", "exec", "--skip-git-repo-check", "--ephemeral", "--sandbox", "read-only",
+                    "-c", 'model_reasoning_effort="low"', "-o", out]
+            if self.model:
+                args += ["-m", self.model]
+            r = subprocess.run(args + ["-"], input=prompt, capture_output=True, text=True, timeout=20, cwd=tmp)
+            if r.returncode != 0:
+                raise RuntimeError(f"codex exited {r.returncode}: {r.stderr.strip()[-200:]}")
+            text = open(out, encoding="utf-8").read().strip() if os.path.exists(out) else ""
+        return text if text and not text.isupper() else None
 
     def _local(self, candidates: list[str], context: str) -> "str | None":
         from mlx_lm import generate

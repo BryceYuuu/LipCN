@@ -1,3 +1,5 @@
+import os
+
 from lipflow.cleanup import basic_cleanup, numbers_to_digits, _user_prompt
 
 
@@ -100,3 +102,60 @@ def test_snapping_leaves_every_harvard_sentence_alone():
     from lipflow.visemes import snap_names
     for h in HARVARD:
         assert snap_names(h.upper(), ["Priya", "Miguel", "Vizcom", "Balance", "Flow"], lambda w: False) == h.upper()
+
+
+
+def test_codex_runs_read_only_and_reads_the_last_message(monkeypatch):
+    """codex exec is an agent: it must run sandboxed, in an empty folder, and only its final reply is used."""
+    import subprocess
+    from lipflow import cleanup
+    from lipflow.cleanup import Cleaner
+    monkeypatch.setattr(cleanup.shutil, "which", lambda name: "/usr/local/bin/codex")
+    calls = []
+
+    def run(args, **kw):
+        calls.append((args, kw))
+        out = args[args.index("-o") + 1]
+        open(out, "w").write("Hi Priya, can we meet at 4:30?\n")
+        return subprocess.CompletedProcess(args, 0, "progress noise", "")
+
+    monkeypatch.setattr(cleanup.subprocess, "run", run)
+    c = Cleaner("codex")
+    assert c.backend == "codex"
+    assert c(["HI PRE A CAN WE MEET AT FOUR THIRTY"], words=[]) == "Hi Priya, can we meet at 4:30?"
+    args, kw = calls[0]
+    assert args[:2] == ["codex", "exec"] and args[-1] == "-"
+    assert args[args.index("--sandbox") + 1] == "read-only" and "--ephemeral" in args
+    assert kw["cwd"] != os.getcwd() and kw["timeout"] <= 20
+    assert "HI PRE A CAN WE MEET AT FOUR THIRTY" in kw["input"]
+
+
+def test_codex_failure_falls_back_to_basic(monkeypatch):
+    import subprocess
+    from lipflow import cleanup
+    from lipflow.cleanup import Cleaner
+    monkeypatch.setattr(cleanup.shutil, "which", lambda name: "/usr/local/bin/codex")
+    monkeypatch.setattr(cleanup.subprocess, "run",
+                        lambda args, **kw: subprocess.CompletedProcess(args, 1, "", "Not logged in"))
+    assert Cleaner("codex")(["WHAT TIME IS IT"], words=[]) == "What time is it?"
+
+    def timeout(args, **kw):
+        raise subprocess.TimeoutExpired(args, kw["timeout"])
+    monkeypatch.setattr(cleanup.subprocess, "run", timeout)
+    assert Cleaner("codex")(["WHAT TIME IS IT"], words=[]) == "What time is it?"
+
+
+def test_backend_is_your_choice(monkeypatch):
+    """Automatic never picks Codex; a choice that isn't set up falls back to automatic."""
+    from lipflow import cleanup
+    from lipflow.cleanup import Cleaner
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+    monkeypatch.setattr(Cleaner, "_ollama_up", staticmethod(lambda: False))
+    monkeypatch.setattr(cleanup.shutil, "which", lambda name: "/usr/local/bin/codex")
+    assert Cleaner("auto").backend != "codex"
+    assert Cleaner("codex").backend == "codex"
+    assert cleanup.unavailable("claude") == "set ANTHROPIC_API_KEY"
+    assert Cleaner("claude").backend == Cleaner("auto").backend
+    monkeypatch.setattr(cleanup.shutil, "which", lambda name: None)
+    assert cleanup.unavailable("codex") and Cleaner("codex").backend == Cleaner("auto").backend
