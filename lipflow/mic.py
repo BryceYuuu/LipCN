@@ -52,9 +52,9 @@ class Mic:
             print(f"[lipflow] microphone unavailable: {e}")
 
     def _cb(self, data, frames, t, status):
-        # time of the first sample in this block, on time.time()'s clock
+        # First sample in this block, on the camera's monotonic clock.
         latency = self._stream.latency if self._stream is not None else 0.0
-        t0 = time.time() - frames / RATE - float(latency or 0.0)
+        t0 = time.monotonic() - frames / RATE - float(latency or 0.0)
         with self._lock:
             self._chunks.append((t0, data[:, 0].copy()))
 

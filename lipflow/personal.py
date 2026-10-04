@@ -35,7 +35,8 @@ _WORD = re.compile(r"[a-z0-9']+")
 
 
 def words_of(text: str) -> list[str]:
-    return _WORD.findall(text.lower())
+    from .text import tokens
+    return tokens(text)
 
 
 # -- import ---------------------------------------------------------------------------
@@ -146,7 +147,9 @@ def suggest_words(phrases: list[str], min_count: int = 3) -> list[str]:
 class Personal:
     """Bigram model + nearest-phrase lookup over your own phrases."""
 
-    def __init__(self, path: str = PHRASES):
+    def __init__(self, path: str | None = None, language="en"):
+        from .paths import phrases_path
+        path = path or (PHRASES if language == "en" else phrases_path(language))
         self.phrases: list[str] = []
         if os.path.exists(path):
             self.phrases = [l.strip() for l in open(path, encoding="utf-8") if l.strip()]

@@ -20,9 +20,9 @@ from ..camera import Camera, Recording, mouth_view
 from ..cleanup import CHOICES, Cleaner, unavailable
 from ..dictation import (
     HISTORY, JOIN_WINDOW, MAX_SECONDS, PREVIEW_EVERY, TAIL_SECONDS, clip_problem, keep_clip, load_settings,
-    log_history, rois_for, save_settings, train_on_face,
+    history_path, configure_options, log_history, rois_for, save_settings, train_on_face,
 )
-from ..paths import HOME
+from ..paths import HOME, default_language, select_language
 from ..vsr import LipReader
 from .hotkey import DEFAULT_KEY, KEYS, PushToTalk
 from .hud import HUD, tray_image
@@ -46,6 +46,11 @@ class Options:
     paste: bool = True
     live_preview: bool = True
     onboard: bool = False
+    language: str | None = None
+    cleanup_mode: str | None = None
+    confidence_policy: str | None = None
+    min_margin: float = 0.5
+    input_mode: str | None = None
 
 
 def key_label(key: str) -> str:
@@ -55,16 +60,21 @@ def key_label(key: str) -> str:
 class Lipflow:
     def __init__(self, opts: Options):
         self.opts = opts
-        self.settings = load_settings()
+        self.settings = load_settings(opts.language or default_language())
         if opts.key == DEFAULT_KEY and self.settings.get("key") in KEYS:
             opts.key = self.settings["key"]
         self.root = tk.Tk()
         self.root.withdraw()
         self._q: "queue.Queue" = queue.Queue()
         self.reader: LipReader | None = None
-        # --cleanup wins for this run; otherwise what you last picked in the tray menu
+        settings = self.settings
+        configure_options(opts, settings)
         self.cleanup_choice = opts.backend if opts.backend != "auto" else self.settings.get("cleanup", "auto")
-        self.cleaner = Cleaner(self.cleanup_choice)
+        self.cleaner = Cleaner(self.cleanup_choice, opts.cleanup_mode, opts.language,
+                               guard_sensitive=opts.confidence_policy != "off")
+        self.settings["whisper"] = opts.input_mode == "whisper"
+        self.last_raw = ""
+        self.review_pending = False
         self.jobs: "queue.Queue" = queue.Queue()
         self.session = 0          # bumps on every start/cancel so stale previews are dropped
         self.preview_busy = False
@@ -111,6 +121,10 @@ class Lipflow:
     # -- setup -----------------------------------------------------------------------------
     def start(self):
         self.hud = HUD(self.root)
+        self.review = None
+        if self.opts.confidence_policy != "off":
+            from .review import Review
+            self.review = Review(self.root)
         self._install_key()
         self._build_tray()
         self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
@@ -136,7 +150,8 @@ class Lipflow:
                 save_settings(self.settings)
                 if then:
                     then()
-            return Item(name_labels[name], act, checked=lambda item: self.settings.get(name, default))
+            return Item(name_labels[name], act, checked=lambda item: self.settings.get(name, default),
+                        enabled=lambda item: name != "whisper" or self.opts.language == "en")
 
         name_labels = {"whisper": "Whisper mode (lips + a soft whisper)",
                        "use_context": "Use the window title for names",
@@ -157,6 +172,16 @@ class Lipflow:
             return Item(key_label(name), lambda icon, item: self.ui(self._pick_key, name),
                         checked=lambda item: self.opts.key == name, radio=True)
 
+        def preference(title, key, items):
+            return Item(title + " (restart)", Menu(*[
+                Item(label, lambda icon, item, k=key, v=value: self.ui(self._preference, k, v),
+                     checked=lambda item, k=key, v=value: self.settings.get(
+                         f"{k}_{self.opts.language}" if k == "confidence_policy" else k, getattr(self.opts, k)) == v,
+                     enabled=lambda item, k=key, v=value: k != "confidence_policy" or
+                         v == "review" or (self.opts.language != "zh" and
+                                           self.opts.cleanup_mode != "polish"), radio=True)
+                for label, value in items]))
+
         autostart = []
         if sys.platform == "win32":
             autostart = [
@@ -170,10 +195,16 @@ class Lipflow:
             Item(lambda item: f"Hold {self.key_name} to dictate, double-tap for hands-free", None, enabled=False),
             Item(lambda item: f"Cleanup: {self.cleaner.describe()}", None, enabled=False),
             Menu.SEPARATOR,
+            Item("Copy raw recognition", lambda icon, item: self.ui(copy_text, self.last_raw)),
             Item("Copy last dictation", lambda icon, item: self.ui(self._copy_last)),
             Item("Practice && train more…", lambda icon, item: self.ui(self.show_setup, "practice")),
             Item("Run setup again…", lambda icon, item: self.ui(self.show_setup)),
             Menu.SEPARATOR,
+            preference("Language / 识别语言", "language", [("English", "en"), ("中文 · CMLR research", "zh")]),
+            preference("Cleanup mode", "cleanup_mode", [("Faithful / 忠实", "faithful"), ("Polish / 润色", "polish")]),
+            preference("Candidate policy / English opt-in", "confidence_policy",
+                       [("Direct paste (English default)", "off"), ("Review", "review"), ("Heuristic auto", "auto")]),
+            preference("Input mode", "input_mode", [("Silent", "silent"), ("Whisper", "whisper")]),
             Item("Camera", Menu(*[pick_camera(v) for v in ["auto", *range(CAMERAS)]])),
             Item("Cleanup", Menu(*[pick_cleanup(b) for b in CHOICES])),
             Item("Push-to-talk key", Menu(*[pick_key(k) for k in KEYS])),
@@ -181,7 +212,7 @@ class Lipflow:
             toggle("use_context"),
             toggle("save_clips"),
             *autostart,
-            Item("Open history", lambda icon, item: self._notepad(HISTORY)),
+            Item("Open history", lambda icon, item: self._notepad(history_path(self.opts.language))),
             Item("Edit custom words…", lambda icon, item: self._edit_words()),
             Item("Open log", lambda icon, item: self._notepad(LOG)),
             Menu.SEPARATOR,
@@ -204,6 +235,17 @@ class Lipflow:
             pass
 
     # -- menu actions (tk thread unless noted) ---------------------------------------------------
+    def _preference(self, key, value):
+        if key == "language":
+            select_language(value)
+            return
+        if key == "confidence_policy":
+            key = f"confidence_policy_{self.opts.language}"
+        self.settings[key] = value
+        save_settings(self.settings)
+        self.icon.update_menu()
+        self.hud.show("done", "Saved / 已保存", "Restart Lipflow to apply / 重启后生效", 4.0)
+
     def _copy_last(self):
         if self.last_output:
             copy_text(self.last_output)
@@ -231,6 +273,9 @@ class Lipflow:
         self.hud.show("done", "Push-to-talk key", f"Hold {self.key_name} to dictate", 2.0)
 
     def _whisper_changed(self):
+        self.opts.input_mode = "whisper" if self.settings.get("whisper") else "silent"
+        self.settings["input_mode"] = self.opts.input_mode
+        save_settings(self.settings)
         if self.settings.get("whisper") and self.av_reader is None and not self.loading:
             self.jobs.put(("whisper",))
 
@@ -245,8 +290,8 @@ class Lipflow:
 
     def _edit_words(self):
         from .. import vocab
-        vocab.load()
-        self._notepad(vocab.PATH)
+        vocab.load(self.opts.language)
+        self._notepad(vocab.path_for(self.opts.language))
 
     @staticmethod
     def _autostart_command() -> str:
@@ -277,6 +322,9 @@ class Lipflow:
                 winreg.SetValueEx(k, "Lipflow", 0, winreg.REG_SZ, self._autostart_command())
 
     def show_setup(self, start_at: str = "welcome"):
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            self.hud.show("error", "Lip training / 唇读训练", "Switch to silent mode and restart / 请切换无声模式并重启", 4.0)
+            return
         from .setup import Setup
         if self.loading and start_at == "practice":
             self.hud.show("error", "Still loading", "Try again in a moment", 1.5)
@@ -296,6 +344,8 @@ class Lipflow:
 
     # -- push-to-talk (tk thread) -------------------------------------------------------------
     def on_start(self, hands_free: bool):
+        if self.review_pending:
+            return
         if self.loading:
             self.hud.show("error", "Still loading", "The model is almost ready…", hide_after=1.5)
             return
@@ -307,10 +357,10 @@ class Lipflow:
             return
         self.session += 1
         self.hands_free = hands_free
-        from ..context import Context, capture
-        # the app you're typing into is in front right now
-        self.ctx = capture() if self.settings.get("use_context", True) else Context()
+        from ..delivery import context_for_recording
+        self.ctx = context_for_recording(self.settings, self.opts.confidence_policy)
         rec = self.camera.start_recording()
+        rec.ctx = self.ctx
         if self.whisper_on:
             self.mic.start()
         self._set_icon(True)
@@ -337,9 +387,13 @@ class Lipflow:
         audio = self.mic.stop() if self.whisper_on else []
         if rec is not None:
             rec.audio = audio
+            rec.session = token
             self.jobs.put(("final", rec))
 
     def on_cancel(self, silent: bool = False):
+        if self.review is not None:
+            self.review.dismiss()
+        self.review_pending = False
         self.pending_stop = None
         self.mic.stop()
         self._set_icon(False)
@@ -377,7 +431,7 @@ class Lipflow:
 
     # -- model thread -------------------------------------------------------------------------
     def _preview_loop(self, session: int, rec: Recording):
-        if not self.opts.live_preview:
+        if not self.opts.live_preview or (self.opts.language == "zh" and self.opts.input_mode == "whisper"):
             return
         waited = 0.0
         while self.session == session:
@@ -408,7 +462,8 @@ class Lipflow:
                 elif job[0] == "whisper":
                     self._load_whisper()
                 elif job[0] == "cleanup":
-                    self.cleaner = Cleaner(job[1])
+                    self.cleaner = Cleaner(job[1], self.opts.cleanup_mode, self.opts.language,
+                                           guard_sensitive=self.opts.confidence_policy != "off")
                     print(f"[lipflow] cleanup: {self.cleaner.describe()}")
                     self.ui(self.icon.update_menu)
             except Exception as e:
@@ -420,26 +475,41 @@ class Lipflow:
                     self.preview_busy = False
 
     def _load(self):
-        t = time.time()
-        self.reader = LipReader(beam_size=self.opts.beam)
-        self.reader.warmup()
+        t = time.monotonic()
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            self.reader = None  # quiet-speech ASR does not require research-only CMLR weights
+        else:
+            self.reader = LipReader(beam_size=self.opts.beam, language=self.opts.language)
+            self.reader.warmup()
+        if self.opts.language == "zh" and self.opts.input_mode == "whisper":
+            from ..whisper import ChineseWhisper
+            self.ui(self.hud.set_text, "Loading Chinese quiet-speech model (first run downloads ~1.6 GB)…")
+            self.zh_whisper = ChineseWhisper()
+            self.zh_whisper.load()
         self.loading = False
-        print(f"[lipflow] model ready in {time.time() - t:.1f}s "
-              f"(encoder on {self.reader.enc_device}, cleanup: {self.cleaner.describe()})")
+        print(f"[lipflow] model ready in {time.monotonic() - t:.1f}s "
+              f"(encoder on {self.reader.enc_device if self.reader else 'CPU quiet-speech'}, cleanup: {self.cleaner.describe()})")
         self.ui(self._set_state, "Ready")
-        if self.settings.get("whisper"):
+        if self.settings.get("whisper") and self.opts.language == "en":
             self.jobs.put(("whisper",))
-        if self.opts.onboard or not self.settings.get("onboarded"):
+        if self.opts.language == "en" and (self.opts.onboard or not self.settings.get("onboarded")):
             self.ui(self.hud.hide)
             self.ui(self.show_setup)
         else:
-            self.ui(self.hud.show, "done", "Lipflow is ready", f"Hold {self.key_name} and mouth your words", 2.5)
+            if self.opts.language == "zh" and self.opts.input_mode == "silent":
+                self.ui(self.hud.show, "done", "中文唇读测试模式", "自由句子识别尚未通过验收，请逐条核对候选", 6.0)
+            else:
+                self.ui(self.hud.show, "done", "Lipflow is ready", f"Hold {self.key_name} and mouth your words", 2.5)
 
     @property
     def whisper_on(self) -> bool:
-        return bool(self.settings.get("whisper")) and self.av_reader is not None and self.onboarding is None
+        return ((self.opts.input_mode == "whisper" and self.opts.language == "zh") or
+                (self.opts.language == "en" and bool(self.settings.get("whisper")) and self.av_reader is not None)) and self.onboarding is None
 
     def _load_whisper(self):
+        if self.opts.language != "en":
+            self.ui(self.hud.show, "error", "English AV model", "Use --language zh --input-mode whisper for Chinese audio", 5.0)
+            return
         from .. import av
         if not av.available():
             self.ui(self.hud.show, "reading", "Whisper mode", "Downloading the audio-visual model (1.8 GB)…")
@@ -462,7 +532,7 @@ class Lipflow:
         wave = segment(rec.audio, ts[0], rois.shape[0])
         if wave is None:
             return None
-        return self.av_reader.beam_search(self.av_reader.encode_av(rois, wave), nbest=5)
+        return self.av_reader.hypotheses(self.av_reader.encode_av(rois, wave), nbest=5)
 
     def _preview(self, session: int, rec: Recording):
         if self.session != session:
@@ -476,7 +546,7 @@ class Lipflow:
             self.ui(self.hud.set_text, text.lower())
 
     def _final(self, rec: Recording):
-        t0 = time.time()
+        t0 = time.monotonic()
         ob = self.onboarding  # the setup window can be closed meanwhile on the tk thread
         problem = clip_problem(rec)
         if problem and ob is not None:
@@ -491,53 +561,99 @@ class Lipflow:
             self.ui(self.hud.show, "error", problem[0], problem[1], 2.2)
             return
         rois = rois_for(rec)
-        enc = self.reader.encode(rois)
-        t_enc = time.time() - t0
+        if rois is None:
+            self.ui(self.hud.show, "error", "No face", "Face the camera / 请正对摄像头", 3.0)
+            return
+        enc = (None if self.opts.language == "zh" and self.opts.input_mode == "whisper" and
+               self.onboarding is None else self.reader.encode(rois))
+        t_enc = time.monotonic() - t0
         if ob is not None:  # practice clip: keep it with its known text, don't paste
             raw = self.reader.greedy(enc)
             print(f"[lipflow] practice clip saved ({rec.duration:.1f}s): {raw!r}")
             self.ui(ob.clip_done, True, "", rois, self.onboarding_text, raw)
             self.ui(self.hud.hide)
             return
-        # Whisper mode reads empty when there's no audible whisper (silent mouthing): fall back to lips
-        candidates = self._av_candidates(rec, rois)
-        if not candidates or not candidates[0]:
-            if candidates is not None:
-                print("[lipflow] lips + audio read nothing, using lips only")
-            candidates = self.reader.beam_search(enc, nbest=5)
-        t_beam = time.time() - t0 - t_enc
-        if not candidates or not candidates[0]:
-            print(f"[lipflow] {rec.duration:.1f}s clip: nothing read")
-            self.ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
+        hypotheses = self.reader.hypotheses(enc, nbest=5) if enc is not None else []
+        if self.opts.language == "en":
+            av_hypotheses = self._av_candidates(rec, rois)
+            if av_hypotheses and av_hypotheses[0].text.strip():
+                hypotheses = av_hypotheses
+        elif self.opts.input_mode == "whisper":
+            from ..whisper import ChineseWhisper
+            from ..mic import segment
+            ts, _, _ = rec.snapshot()
+            wave = segment(getattr(rec, "audio", []), ts[0], len(rois))
+            if not hasattr(self, "zh_whisper"):
+                self.zh_whisper = ChineseWhisper()
+            hypotheses = self.zh_whisper.hypotheses(wave)
+        greedy = (self.reader.greedy(enc) if self.opts.confidence_policy != "off" and
+                  self.opts.input_mode != "whisper" else "")
+        from ..delivery import choose_result, quality_for
+        ctx = getattr(rec, "ctx", None)
+        decision, result, choices = choose_result(hypotheses, greedy, quality_for(rec, rois),
+            self.cleaner, ctx, " ".join(self.context[-3:]), self.opts.confidence_policy, self.opts.min_margin)
+        self.ui(self._deliver, rec, rois, hypotheses, decision, result, choices, time.monotonic()-t0)
+
+    def _deliver(self, rec, rois, hypotheses, decision, result, choices, latency):
+        if self.session != rec.session:
+            return  # cancelled or superseded while the model was running
+        if decision.action == "retry":
+            self.hud.show("error", "Please repeat / 请重说", decision.reason, 5.0)
             return
-        self.ui(self.hud.set_text, candidates[0].lower())
-        ctx = self.ctx
-        text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=ctx.names if ctx else None)
-        t_all = time.time() - t0
-        print(f"[lipflow] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
-              f"          → typed: {text!r}  (encode {t_enc:.2f}s, beam {t_beam:.2f}s, total {t_all:.2f}s)")
-        if not text:
-            self.ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
+        self.last_raw = result.raw
+        if decision.action == "review" or result.needs_review:
+            self.review_pending = True
+            reason = "\n".join([decision.reason, *result.warnings, "Target: " + rec.ctx.describe()])
+            self.hud.hide()
+            self.review.show(choices, reason, lambda text: self._selected(rec, rois, hypotheses,
+                decision, result, latency, text))
+        else:
+            self._publish(rec, rois, hypotheses, decision, result, latency, result.text)
+
+    def _selected(self, rec, rois, hypotheses, decision, result, latency, text):
+        self.review_pending = False
+        if text is None or self.session != rec.session:
+            return
+        from ..delivery import restore_target
+        if self.opts.paste:
+            restore_target(rec.ctx)
+        self.root.after(180, lambda: self._publish(rec, rois, hypotheses, decision, result, latency, text))
+
+    def _publish(self, rec, rois, hypotheses, decision, result, latency, text):
+        if self.session != rec.session:
+            return
+        from ..delivery import target_is_current, quality_for
+        ctx = rec.ctx
+        if self.opts.paste and self.opts.confidence_policy != "off" and not target_is_current(ctx):
+            copy_text(text)
+            self.hud.show("done", "Copied / 已复制", "Target changed; paste manually / 输入位置已变，请手动粘贴", 5.0)
+            self.last_output = text
             return
         out = text
-        if self.last_paste_at and time.time() - self.last_paste_at < JOIN_WINDOW:
+        if self.opts.language == "en" and self.last_paste_at and time.monotonic()-self.last_paste_at < JOIN_WINDOW:
             out = " " + text
         self.last_output = text
-        self.last_paste_at = time.time()
+        self.last_paste_at = time.monotonic()
         self.context.append(text)
-        log_history(rec, candidates, text, t_all, self.cleaner.describe())
+        candidates = [h.text for h in hypotheses]
+        log_history(rec, candidates, text, latency, self.cleaner.describe(), language=self.opts.language,
+                    evidence={"hypotheses": [{"text": h.text, "score": h.score, "token_count": h.token_count}
+                                              for h in hypotheses], "assessment": decision.asdict(),
+                              "quality": vars(quality_for(rec, rois)),
+                              "cleanup_proposed": result.proposed, "warnings": result.warnings,
+                              "language": self.opts.language})
         keep_clip(rois, candidates, text, self.settings)
-        self.ui(paste_text if self.opts.paste else copy_text, out if self.opts.paste else text)
-        self.ui(self.hud.show, "done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
+        (paste_text if self.opts.paste else copy_text)(out if self.opts.paste else text)
+        self.hud.show("done", "Pasted" if self.opts.paste else "Copied", text, 2.4)
 
     def _train(self, ob):
         self.loading = True
         self.ui(self._set_state, "Training on your face…")
-        r = train_on_face(self.opts.beam, ob.report)
+        r = train_on_face(self.opts.beam, ob.report, self.opts.language)
         if r["after"] is not None:
-            self.reader = LipReader(beam_size=self.opts.beam)
+            self.reader = LipReader(beam_size=self.opts.beam, language=self.opts.language)
             self.reader.warmup()
-            self.settings["training"] = {"before": r["before"], "after": r["after"], "kept": r["kept"],
+            self.settings["training" if self.opts.language == "en" else "training_zh"] = {"before": r["before"], "after": r["after"], "kept": r["kept"],
                                          "clips": r["clips"], "at": time.time()}
             save_settings(self.settings)
         self.loading = False

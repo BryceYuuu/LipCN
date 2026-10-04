@@ -20,16 +20,53 @@ TAIL_SECONDS = 0.4  # keep filming after release: the last word needs the frames
 JOIN_WINDOW = 45.0  # dictations this close together get a separating space
 
 
-def load_settings() -> dict:
+def history_path(language="en"):
+    from .paths import language_home
+    return HISTORY if language == "en" else os.path.join(language_home(language), "history.jsonl")
+
+
+def settings_path(language="en"):
+    from .paths import language_home
+    return SETTINGS if language == "en" else os.path.join(language_home(language), "settings.json")
+
+
+def load_settings(language="en") -> dict:
     try:
-        return json.load(open(SETTINGS))
+        settings = json.load(open(settings_path(language)))
+        settings["language"] = language
+        return settings
     except (OSError, ValueError):
         return {}
 
 
 def save_settings(d: dict):
-    os.makedirs(os.path.dirname(SETTINGS), exist_ok=True)
-    json.dump(d, open(SETTINGS, "w"), indent=2)
+    path = settings_path(d.get("language", "en"))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    json.dump(d, open(path, "w"), indent=2)
+
+
+def configure_options(opts, settings: dict):
+    """Resolve CLI overrides and saved preferences without changing English defaults.
+
+    Candidate review is opt-in for faithful English and mandatory for Mandarin
+    or explicitly selected polish mode. A saved
+    Mandarin preference must not silently enable review when switching to English.
+    Older settings used a shared key; honour it only for their saved language.
+    """
+    opts.language = opts.language or settings.get("language", "en")
+    opts.cleanup_mode = opts.cleanup_mode or settings.get("cleanup_mode", "faithful")
+    policy = opts.confidence_policy
+    if policy is None:
+        policy = settings.get(f"confidence_policy_{opts.language}")
+        if policy is None and settings.get("language", "en") == opts.language:
+            policy = settings.get("confidence_policy")
+    if policy not in {"off", "review", "auto"}:
+        policy = "off"
+    opts.confidence_policy = "review" if opts.language == "zh" or opts.cleanup_mode == "polish" else policy
+    opts.input_mode = opts.input_mode or settings.get(
+        "input_mode", "whisper" if settings.get("whisper") else "silent")
+    settings["language"] = opts.language
+    return opts
 
 
 def clip_problem(rec) -> "tuple[str, str] | None":
@@ -51,12 +88,13 @@ def rois_for(rec):
     return mouth_rois([grays[i] for i in idx], [anchors[i] for i in idx])
 
 
-def log_history(rec, candidates, text, secs, cleanup: str):
-    os.makedirs(os.path.dirname(HISTORY), exist_ok=True)
-    with open(HISTORY, "a", encoding="utf-8") as f:
+def log_history(rec, candidates, text, secs, cleanup: str, evidence=None, language="en"):
+    path = history_path(language)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
         f.write(json.dumps({"at": time.strftime("%Y-%m-%dT%H:%M:%S"), "seconds": round(rec.duration, 2),
                             "raw": candidates, "text": text, "latency": round(secs, 2),
-                            "cleanup": cleanup}) + "\n")
+                            "cleanup": cleanup, **({"evidence": evidence} if evidence else {})}) + "\n")
 
 
 def keep_clip(rois, candidates, text, settings: dict):
@@ -64,7 +102,7 @@ def keep_clip(rois, candidates, text, settings: dict):
     can be measured on your real clips. Off switch in Settings."""
     if not settings.get("save_clips", True):
         return
-    d = os.path.join(os.path.dirname(HISTORY), "clips", "dictations")
+    d = os.path.join(os.path.dirname(history_path(settings.get("language", "en"))), "clips", "dictations")
     os.makedirs(d, exist_ok=True)
     np.savez_compressed(os.path.join(d, f"{int(time.time() * 1000)}.npz"), rois=rois,
                         raw=np.array(candidates), text=text)
@@ -73,7 +111,7 @@ def keep_clip(rois, candidates, text, settings: dict):
         os.remove(os.path.join(d, f))
 
 
-def train_on_face(beam: int, report) -> dict:
+def train_on_face(beam: int, report, language="en") -> dict:
     """Personal LM (if you imported phrases), then face adaptation with a held-out check.
 
     report(pct, text) gets progress. Returns {"before", "after", "kept", "clips", "note"};
@@ -87,7 +125,7 @@ def train_on_face(beam: int, report) -> dict:
     from .train_vsr import finetune, save
     from .vsr import LipReader
     note = ""
-    if os.path.exists(PHRASES):
+    if language == "en" and os.path.exists(PHRASES):
         report(3, "Learning how you talk from your phrases…")
         from .train_lm import train as train_lm
         try:
@@ -96,8 +134,8 @@ def train_on_face(beam: int, report) -> dict:
                     if r["saved"] else "")
         except Exception as e:
             print(f"[lipflow] train-lm failed: {e}")
-    clips = saved_clips()
-    learned = corrections.load_all()
+    clips = saved_clips(language)
+    learned = corrections.load_all(language)
     if len(clips) < N_HELD_OUT + 6:
         return {"before": 0, "after": None, "kept": False, "clips": len(clips),
                 "note": "Not enough practice clips to train on. Run setup again from the menu."}
@@ -105,7 +143,7 @@ def train_on_face(beam: int, report) -> dict:
     # held out: practice clips only (their text is certain); corrections only ever train
     test, train = clips[:N_HELD_OUT], clips[N_HELD_OUT:] + learned
     report(15, f"Measuring the standard model on {len(test)} of your sentences…")
-    base = LipReader(beam_size=beam, personal=False)
+    base = LipReader(beam_size=beam, personal=False, language=language)
 
     def score(reader):
         e = n = 0

@@ -17,13 +17,19 @@ Lipflow
 """
 
 
-def load() -> list[str]:
-    if not os.path.exists(PATH):
-        os.makedirs(os.path.dirname(PATH), exist_ok=True)
-        with open(PATH, "w", encoding="utf-8") as f:
+def path_for(language="en"):
+    from .paths import language_home
+    return PATH if language == "en" else os.path.join(language_home(language), "words.txt")
+
+
+def load(language="en") -> list[str]:
+    path = path_for(language)
+    if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
             f.write(_TEMPLATE)
     words = []
-    for line in open(PATH, encoding="utf-8"):
+    for line in open(path, encoding="utf-8"):
         line = line.strip()
         if line and not line.startswith("#"):
             words.append(line)
@@ -32,7 +38,8 @@ def load() -> list[str]:
 
 def _hits(text: str, words: list[str]) -> int:
     t = f" {text.upper()} "
-    return sum(f" {w.upper()} " in t for w in words)
+    from .text import contains
+    return sum(contains(text, w) for w in words)
 
 
 def rerank(candidates: list[str], words: list[str]) -> list[str]:
@@ -44,5 +51,5 @@ def rerank(candidates: list[str], words: list[str]) -> list[str]:
 
 def apply_case(text: str, words: list[str]) -> str:
     for w in words:
-        text = re.sub(rf"\b{re.escape(w)}\b", w, text, flags=re.I)
+        text = re.sub(rf"(?<![a-z0-9_]){re.escape(w)}(?![a-z0-9_])", w, text, flags=re.I)
     return text

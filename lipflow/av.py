@@ -106,8 +106,8 @@ class AVReader(LipReader):
         self.read_av(np.zeros((25, 96, 96), np.uint8), np.random.default_rng(0).normal(0, 0.01, 16000))
 
     def read_av(self, rois, wave) -> tuple[str, float]:
-        t0 = time.time()
-        return self.beam_search(self.encode_av(rois, wave)), time.time() - t0
+        t0 = time.monotonic()
+        return self.beam_search(self.encode_av(rois, wave)), time.monotonic() - t0
 
 
 def load_audio(path: str, start: float, end: float) -> np.ndarray:

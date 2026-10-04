@@ -28,8 +28,20 @@ def test_custom_words_pick_the_guess_and_fix_case():
     c = Cleaner("basic")
     c.personal = Personal("/nonexistent")  # don't depend on the user's imported history
     guesses = ["HELLO MCCALL I AM SENDING YOU A MESSAGE", "HELLO MIGUEL I AM SENDING YOU A MESSAGE"]
+    # Original English behavior: a user-provided name resolves its lip lookalike.
     assert c(guesses, words=["Miguel"]) == "Hello Miguel I am sending you a message."
     assert c(guesses, words=[]) == "Hello mccall I am sending you a message."
+
+
+def test_context_names_keep_original_english_snapping():
+    from lipflow.cleanup import Cleaner
+    from lipflow.personal import Personal
+    c = Cleaner("basic")
+    c.personal = Personal("/nonexistent")
+    result = c.process(["HELLO MCCALL I AM SENDING YOU A MESSAGE"], words=[], names=["Miguel"])
+    assert result.raw == "HELLO MCCALL I AM SENDING YOU A MESSAGE"
+    assert result.text == "Hello Miguel I am sending you a message."
+    assert not result.needs_review
 
 
 def test_small_model_may_not_invent_words():
@@ -51,6 +63,27 @@ def test_vocab_edit_guard():
     assert not within_guesses("Hello Miguel, I am sending you a message with my new toy.", guesses, False, known, 1)
 
 
+def test_local_english_keeps_original_candidate_word_limits(monkeypatch):
+    import sys
+    from types import SimpleNamespace
+    from lipflow.cleanup import Cleaner
+    from lipflow.personal import Personal
+
+    cleaner = Cleaner("basic")
+    cleaner.backend = "local"
+    cleaner.personal = Personal("/nonexistent")
+    cleaner._mlx = (object(), SimpleNamespace(apply_chat_template=lambda *args, **kwargs: "prompt"))
+    generated = {"text": "We walk in the park."}
+    monkeypatch.setitem(sys.modules, "mlx_lm", SimpleNamespace(generate=lambda *args, **kwargs: generated["text"]))
+    guesses = ["WE WALK IN THE BARK", "WE WALK IN THE PARK"]
+
+    # The original small-model guard allows a one-word correction from another
+    # recognition candidate; disabling the new guard must preserve this behavior.
+    assert cleaner(guesses, words=[]) == "We walk in the park."
+    generated["text"] = "We fly across the universe."
+    assert cleaner(guesses, words=[]) == "We walk in the bark."
+
+
 def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
     import lipflow.personal as P
     from lipflow import practice as O
@@ -61,12 +94,17 @@ def test_practice_sentences_fall_back_to_harvard(tmp_path, monkeypatch):
 
 def test_training_targets_drop_punctuation():
     from lipflow.train_vsr import _targets
-
+    encoded = []
     class R:
-        token_list = ["<blank>"] + [l.split()[0] for l in open("lipflow/unigram5000_units.txt", encoding="utf-8").read().splitlines()] + ["<eos>"]
+        # Inspect the text passed to the tokenizer without requiring a downloaded
+        # English model artifact in an otherwise local normalization test.
+        @staticmethod
+        def _tok(text):
+            encoded.append(text)
+            return [1, 2]
     r = R()
-    unk = r.token_list.index("<unk>")
-    assert unk not in _targets(r, "Hello, Miguel. It's done!")
+    assert _targets(r, "Hello, Miguel. It's done!") == [1, 2]
+    assert encoded == ["HELLO MIGUEL IT'S DONE"]
 
 
 def test_practice_mixes_own_and_harvard(tmp_path, monkeypatch):

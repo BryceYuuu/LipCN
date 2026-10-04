@@ -23,11 +23,14 @@ from .paths import LINUX, WHO, WINDOWS
 
 @dataclass
 class Recording:
+    # Camera frames and microphone chunks share time.monotonic()'s clock.
     started: float
     ts: list[float] = field(default_factory=list)
     grays: list[np.ndarray] = field(default_factory=list)
     anchors: list["np.ndarray | None"] = field(default_factory=list)
     mouth_open: list[float] = field(default_factory=list)
+
+    mouth_pixels: list[float] = field(default_factory=list)
 
     def snapshot(self):
         # The capture thread appends to these one after another; take a length all three have.
@@ -87,7 +90,7 @@ class Camera:
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._rec: Recording | None = None
-        self._last_used = time.time()
+        self._last_used = time.monotonic()
         self._tracker: FaceTracker | None = None
         self.error: str | None = None
         self.ready = threading.Event()
@@ -95,7 +98,7 @@ class Camera:
 
     # -- lifecycle -----------------------------------------------------------------
     def ensure_open(self):
-        self._last_used = time.time()
+        self._last_used = time.monotonic()
         if self._thread and self._thread.is_alive():
             return
         self._stop.clear()
@@ -116,13 +119,13 @@ class Camera:
     def start_recording(self) -> Recording:
         self.ensure_open()
         with self._lock:
-            self._rec = Recording(started=time.time())
+            self._rec = Recording(started=time.monotonic())
             return self._rec
 
     def stop_recording(self) -> "Recording | None":
         with self._lock:
             rec, self._rec = self._rec, None
-        self._last_used = time.time()
+        self._last_used = time.monotonic()
         return rec
 
     @property
@@ -174,15 +177,15 @@ class Camera:
             self.error = str(e)
             print(f"[camera] {e}")
             return
-        t0 = time.time()
+        t0 = time.monotonic()
         warm = n_read = 0
         try:
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
                 if self._file_fps:  # play the file back in real time
                     n_read += 1
-                    time.sleep(max(0.0, t0 + n_read / self._file_fps - time.time()))
-                now = time.time()
+                    time.sleep(max(0.0, t0 + n_read / self._file_fps - time.monotonic()))
+                now = time.monotonic()
                 if not ok:
                     time.sleep(0.01)
                     continue
@@ -200,6 +203,7 @@ class Camera:
                             rec.grays.append(face_crop(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), obs, rec))
                             rec.anchors.append(obs.anchors if obs else None)
                             rec.mouth_open.append(obs.mouth_open if obs else 0.0)
+                            rec.mouth_pixels.append(float(np.ptp(obs.outer_lips[:, 0])) if obs else 0.0)
                 if self.on_frame is not None:
                     try:
                         self.on_frame(frame, obs, rec is not None)

@@ -9,7 +9,7 @@ from .vsr import MODELS
 from .paths import WHO
 
 
-def doctor() -> int:
+def doctor(language="en") -> int:
     ok = True
 
     def line(good, what, fix=""):
@@ -25,7 +25,9 @@ def doctor() -> int:
         fix_models = "run ./setup.sh"
 
     print("Lipflow doctor\n")
-    for rel, size in [("vsr/model.pth", 900e6), ("lm/model.pth", 200e6), ("face_landmarker.task", 3e6)]:
+    model_files = ([("zh/vsr/model.pth", 200e6), ("zh/lm/model.pth", 180e6)] if language == "zh" else
+                   [("vsr/model.pth", 900e6), ("lm/model.pth", 200e6)]) + [("face_landmarker.task", 3e6)]
+    for rel, size in model_files:
         path = os.path.join(MODELS, rel)
         line(os.path.exists(path) and os.path.getsize(path) > size, f"model file {rel}", fix_models)
 

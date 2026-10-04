@@ -23,7 +23,8 @@ KEEP = 500
 
 
 def _words(t: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", t.lower())
+    from .text import tokens
+    return tokens(t)
 
 
 def inserted_span(before: str, after: str) -> str:
@@ -40,6 +41,24 @@ def inserted_span(before: str, after: str) -> str:
 def find_correction(pasted: str, span: str) -> "str | None":
     """The corrected version of `pasted` inside `span`, or None if it wasn't corrected (or was
     rewritten beyond recognition). Words typed before/after the dictation are trimmed off."""
+    from .text import has_han, tokens
+    if has_han(pasted):
+        from .guard import edits
+        pw, sw = tokens(pasted), tokens(span)
+        if not pw or len(sw) < max(1, len(pw)-2):
+            return None
+        possibilities = []
+        max_change = max(2, int(len(pw)*0.4))
+        for start in range(min(len(sw), 30)):
+            for length in range(max(1, len(pw)-2), min(len(sw)-start, len(pw)+2)+1):
+                candidate = sw[start:start+length]
+                distance = edits(pw, candidate)
+                if 0 <= distance <= max_change:
+                    possibilities.append((distance, abs(length-len(pw)), start, candidate))
+        if not possibilities:
+            return None
+        best = min(possibilities)
+        return None if best[0] == 0 else "".join(best[3])
     pw, sw_raw = _words(pasted), re.findall(r"\S+", span)
     sw = [" ".join(_words(w)) for w in sw_raw]
     if not pw or not sw:
@@ -72,33 +91,46 @@ def find_correction(pasted: str, span: str) -> "str | None":
     return " ".join(fixed_raw).strip()
 
 
-def save(rois, pasted: str, corrected: str, raw) -> str:
-    os.makedirs(DIR, exist_ok=True)
-    path = os.path.join(DIR, f"{int(time.time() * 1000)}.npz")
-    np.savez_compressed(path, rois=rois, text=corrected, pasted=pasted, raw=np.array(raw))
-    for f in sorted(os.listdir(DIR))[:-KEEP]:
-        os.remove(os.path.join(DIR, f))
+def directory(language="en"):
+    from .paths import language_home
+    return DIR if language == "en" else os.path.join(language_home(language), "clips", "corrections")
+
+
+def save(rois, pasted: str, corrected: str, raw, language="en") -> str:
+    folder = directory(language)
+    os.makedirs(folder, exist_ok=True)
+    path = os.path.join(folder, f"{int(time.time() * 1000)}.npz")
+    np.savez_compressed(path, rois=rois, text=corrected, pasted=pasted, raw=np.array(raw), language=language)
+    for f in sorted(os.listdir(folder))[:-KEEP]:
+        os.remove(os.path.join(folder, f))
     return path
 
 
-def count() -> int:
-    return len(os.listdir(DIR)) if os.path.isdir(DIR) else 0
+def count(language="en") -> int:
+    folder = directory(language)
+    return len(os.listdir(folder)) if os.path.isdir(folder) else 0
 
 
-def load_all() -> list[dict]:
-    if not os.path.isdir(DIR):
+def load_all(language="en") -> list[dict]:
+    folder = directory(language)
+    if not os.path.isdir(folder):
         return []
     out = []
-    for f in sorted(os.listdir(DIR)):
-        d = np.load(os.path.join(DIR, f), allow_pickle=True)
-        out.append({"rois": d["rois"], "text": str(d["text"])})
+    for f in sorted(os.listdir(folder)):
+        d = np.load(os.path.join(folder, f), allow_pickle=True)
+        from .text import has_han
+        text = str(d["text"])
+        recorded = str(d["language"]) if "language" in d else None
+        if recorded == language or (recorded is None and has_han(text) == (language == "zh")):
+            out.append({"rois": d["rois"], "text": text})
     return out
 
 
 class Watcher:
     """Re-reads one AX text element after a paste. Call on the main thread."""
 
-    def __init__(self, element, before: str, pasted: str, rois, raw, on_saved=None):
+    def __init__(self, element, before: str, pasted: str, rois, raw, on_saved=None, language="en"):
+        self.language = language
         self.element, self.before, self.pasted = element, before, pasted.strip()
         self.rois, self.raw, self.on_saved = rois, raw, on_saved
         self.best = None
@@ -124,7 +156,7 @@ class Watcher:
         if last or val is None:
             self.done = True
             if self.best:
-                save(self.rois, self.pasted, self.best, self.raw)
+                save(self.rois, self.pasted, self.best, self.raw, language=self.language)
                 print(f"[lipflow] learned from your correction ({len(_words(self.best))} words)")
                 if self.on_saved:
                     self.on_saved()
