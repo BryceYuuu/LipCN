@@ -351,6 +351,18 @@ class BeamSearch(torch.nn.Module):
             list[Hypothesis]: N-best decoding results
 
         """
+        # Encoder storage can be reused between utterances. Attention's memory
+        # cache uses data_ptr/shape/device, so it must not survive a new search.
+        for module in self.modules():
+            if hasattr(module, "_mem_kv"):
+                module._mem_kv = None
+        # AVReader can replace an active scorer without replacing nn_dict.
+        for scorer in self.full_scorers.values():
+            if isinstance(scorer, torch.nn.Module):
+                for module in scorer.modules():
+                    if hasattr(module, "_mem_kv"):
+                        module._mem_kv = None
+
         # set length bounds
         if maxlenratio == 0:
             maxlen = x.shape[0]

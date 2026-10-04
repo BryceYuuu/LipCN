@@ -105,12 +105,28 @@ class LipReader:
 
     @staticmethod
     def resample(timestamps: list[float], n_frames: int) -> list[int]:
-        """Indices that turn a variable-rate capture into a steady 25 fps sequence."""
+        """Nearest frame indices for a steady 25 fps sequence.
+
+        If the timeline is unusable, retain the captured sequence in its original
+        order. Sorting or dropping frames cannot repair an unknown capture clock,
+        and would break the alignment between the frames and their landmarks.
+        """
         if n_frames == 0:
             return []
-        t = np.asarray(timestamps, dtype=np.float64)
-        grid = np.arange(t[0], t[-1] + 1e-9, 1.0 / MODEL_FPS)
-        return np.clip(np.searchsorted(t, grid), 0, n_frames - 1).tolist()
+        try:
+            t = np.asarray(timestamps, dtype=np.float64)
+        except (TypeError, ValueError, OverflowError):
+            return list(range(n_frames))
+        if t.ndim != 1 or len(t) != n_frames or not np.isfinite(t).all() or np.any(np.diff(t) <= 0):
+            return list(range(n_frames))
+        grid = t[0] + np.arange(int(np.floor((t[-1] - t[0]) * MODEL_FPS + 1e-6)) + 1) / MODEL_FPS
+        right = np.clip(np.searchsorted(t, grid), 0, n_frames - 1)
+        left = np.maximum(right - 1, 0)
+        # Choose the nearest capture. Always choosing the frame to the right skips
+        # frames even at exactly 25 fps when floating point rounding shifts a grid
+        # timestamp a fraction above its corresponding capture timestamp.
+        indices = np.where(grid - t[left] <= t[right] - grid, left, right)
+        return indices.tolist()
 
     @staticmethod
     def to_tensor(rois: np.ndarray) -> torch.Tensor:
