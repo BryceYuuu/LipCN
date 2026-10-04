@@ -242,3 +242,6 @@ The LRS3-trained weights are for non-commercial research use.
 MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own license, listed in
 [NOTICE](NOTICE). The model weights that setup.sh downloads come from the LRS3 dataset, which is
 for non-commercial research use only.
+
+
+Optional Mandarin research tooling, frozen benchmark reports, dataset protocols and the explicitly operated collector live under [research/](research/README.md). They are separate from the runtime and packaged wheel.
