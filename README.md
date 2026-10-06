@@ -4,6 +4,10 @@
 
 **Turn speech or lip movements into text on your Mac, then choose from three wording options.** Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu), with a focus on Mandarin input.
 
+LipCN 专注于中文版本的开发。如需英文版本，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
+
+LipCN focuses on developing the Mandarin version. For the English version, check out the original [Lipflow project](https://github.com/amywork777/lipflow) by [Amy Zhou (@amywork777)](https://github.com/amywork777).
+
 ## 功能 / Features
 
 | 中文 | English |
