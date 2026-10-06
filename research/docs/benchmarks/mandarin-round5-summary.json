@@ -148,12 +148,12 @@
         "real_webcam_claimed": false,
         "models_trained_from_scratch": false,
         "development_report_sha256": {
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-identity-clean.json": "f238bb76ce11aa7451bc88fb6d0a15d583355626ff7d8e913f1ab034a7af9755",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-identity-synthetic_mild.json": "ec4f1cb64842466b93897e6193b13c78d2623d40f52b7e19dd966ccf76079421",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_mild-clean.json": "f8db7a68cb540ff46e062a41767cc535a6c2d0f88c7687990c62e602f373ef1a",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_mild-synthetic_mild.json": "e87c34900ff3d4e4abd4704a29d31e40f95f00cb39254c20e8d87de1870ab0a5",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_moderate-clean.json": "6544beb37babf49e9adc774d907ef6967e9c7b7bd74bf952e167b275a1757d45",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_moderate-synthetic_mild.json": "23a5f825ee1542fb90f0605c5210f2467bcc78ab5d529dcdb3f3ebd86ad3173d"
+          "/local/lipflow-research/round5-evidence/dev-identity-clean.json": "f238bb76ce11aa7451bc88fb6d0a15d583355626ff7d8e913f1ab034a7af9755",
+          "/local/lipflow-research/round5-evidence/dev-identity-synthetic_mild.json": "ec4f1cb64842466b93897e6193b13c78d2623d40f52b7e19dd966ccf76079421",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_mild-clean.json": "f8db7a68cb540ff46e062a41767cc535a6c2d0f88c7687990c62e602f373ef1a",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_mild-synthetic_mild.json": "e87c34900ff3d4e4abd4704a29d31e40f95f00cb39254c20e8d87de1870ab0a5",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_moderate-clean.json": "6544beb37babf49e9adc774d907ef6967e9c7b7bd74bf952e167b275a1757d45",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_moderate-synthetic_mild.json": "23a5f825ee1542fb90f0605c5210f2467bcc78ab5d529dcdb3f3ebd86ad3173d"
         }
       },
       "conditions": {
@@ -2094,12 +2094,12 @@
         "real_webcam_claimed": false,
         "models_trained_from_scratch": false,
         "development_report_sha256": {
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-identity-clean.json": "f238bb76ce11aa7451bc88fb6d0a15d583355626ff7d8e913f1ab034a7af9755",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-identity-synthetic_mild.json": "ec4f1cb64842466b93897e6193b13c78d2623d40f52b7e19dd966ccf76079421",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_mild-clean.json": "f8db7a68cb540ff46e062a41767cc535a6c2d0f88c7687990c62e602f373ef1a",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_mild-synthetic_mild.json": "e87c34900ff3d4e4abd4704a29d31e40f95f00cb39254c20e8d87de1870ab0a5",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_moderate-clean.json": "6544beb37babf49e9adc774d907ef6967e9c7b7bd74bf952e167b275a1757d45",
-          "/Users/bryce/.cache/lipflow-research/round5-evidence/dev-stabilize_moderate-synthetic_mild.json": "23a5f825ee1542fb90f0605c5210f2467bcc78ab5d529dcdb3f3ebd86ad3173d"
+          "/local/lipflow-research/round5-evidence/dev-identity-clean.json": "f238bb76ce11aa7451bc88fb6d0a15d583355626ff7d8e913f1ab034a7af9755",
+          "/local/lipflow-research/round5-evidence/dev-identity-synthetic_mild.json": "ec4f1cb64842466b93897e6193b13c78d2623d40f52b7e19dd966ccf76079421",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_mild-clean.json": "f8db7a68cb540ff46e062a41767cc535a6c2d0f88c7687990c62e602f373ef1a",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_mild-synthetic_mild.json": "e87c34900ff3d4e4abd4704a29d31e40f95f00cb39254c20e8d87de1870ab0a5",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_moderate-clean.json": "6544beb37babf49e9adc774d907ef6967e9c7b7bd74bf952e167b275a1757d45",
+          "/local/lipflow-research/round5-evidence/dev-stabilize_moderate-synthetic_mild.json": "23a5f825ee1542fb90f0605c5210f2467bcc78ab5d529dcdb3f3ebd86ad3173d"
         }
       },
       "conditions": {
@@ -4752,40 +4752,40 @@
     "schema_version": 1,
     "checked_before_and_after": true,
     "binary_assets_sha256": {
-      "/Users/bryce/.cache/lipflow-research/round5-assets/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
-      "/Users/bryce/.cache/lipflow-research/round4-publish-windows/lipflow/mean_face.npy": "dbf68b2044171e1160716df7c53e8bbfaa0ee8c61fb41171d04cb6092bb81422"
+      "/local/lipflow-research/round5-assets/face_landmarker.task": "64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
+      "/local/lipflow-research/round4-publish-windows/lipflow/mean_face.npy": "dbf68b2044171e1160716df7c53e8bbfaa0ee8c61fb41171d04cb6092bb81422"
     },
     "frozen_plan_sha256": "e87395a0028df5980f3d6978c1999389c9bf24929f92a6f75fe14c8bed8af937",
     "assets_metadata_sha256": "d753f3546b592ae573ad464d718e60543fa8cbd176bc22d9e61c9693fc78c76d",
     "command": [
-      "/Users/bryce/.cache/lipflow-research/round4-venv/bin/python",
-      "/Users/bryce/.cache/lipflow-research/round4-publish-windows/research/scripts/benchmark_chinese_models.py",
+      "/local/lipflow-research/round4-venv/bin/python",
+      "/local/lipflow-research/round4-publish-windows/research/scripts/benchmark_chinese_models.py",
       "--accept-research-license",
       "--manifest",
-      "/Users/bryce/.cache/lipflow-research/round5-assets/full-face-holdout/test.json",
+      "/local/lipflow-research/round5-assets/full-face-holdout/test.json",
       "--cmlr-dir",
-      "/Users/bryce/.cache/lipflow-research/round5-assets/cmlr",
+      "/local/lipflow-research/round5-assets/cmlr",
       "--checkpoint",
-      "/Users/bryce/.cache/lipflow-research/round4-assets/checkpoints/model_avg_cncvs_2_3_cnvsrc.pth",
+      "/local/lipflow-research/round4-assets/checkpoints/model_avg_cncvs_2_3_cnvsrc.pth",
       "--source-dir",
-      "/Users/bryce/.cache/lipflow-research/round4-assets/CNVSRC2025",
+      "/local/lipflow-research/round4-assets/CNVSRC2025",
       "--adapter",
-      "/Users/bryce/.cache/lipflow-research/round4-assets/chinese-lips-v2/run-joint/encoder_adapter.pth",
+      "/local/lipflow-research/round4-assets/chinese-lips-v2/run-joint/encoder_adapter.pth",
       "--selection",
-      "/Users/bryce/.cache/lipflow-research/round5-evidence/development-selection.json",
+      "/local/lipflow-research/round5-evidence/development-selection.json",
       "--reverse-scoring",
       "batched",
       "--reverse-validation",
-      "/Users/bryce/.cache/lipflow-research/round5-evidence/reverse-batch-validation.json",
+      "/local/lipflow-research/round5-evidence/reverse-batch-validation.json",
       "--cpu-threads",
       "4",
       "--output-dir",
-      "/Users/bryce/.cache/lipflow-research/round5-evidence/full-face-paired"
+      "/local/lipflow-research/round5-evidence/full-face-paired"
     ],
     "camera_opened": false
   },
   "post_run_guard_hardening": {
-    "inference_source_archive": "/Users/bryce/.cache/lipflow-research/round5-evidence/test-frozen-source",
+    "inference_source_archive": "/local/lipflow-research/round5-evidence/test-frozen-source",
     "actual_inference_sources_preserved": 58,
     "changed_files": [
       "research/scripts/benchmark_chinese_models.py",

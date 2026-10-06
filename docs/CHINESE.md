@@ -1,5 +1,7 @@
 # 中文识别与候选确认 / Experimental Mandarin recognition and review
 
+入口范围 / Scope: 本页说明 `lipflow/` 中的默认旧版 CLI/CMLR 入口。显式选择的[LipCN 中文研究桌面入口](../desktop/mandarin/)另有安装与运行说明，不会自动替换旧版入口。 This page documents the default legacy CLI/CMLR runtime in `lipflow/`; the separately selected [LipCN research desktop entry](../desktop/mandarin/) has its own setup and does not automatically replace it.
+
 [English guide](#english-guide)
 
 实现状态记录日期：2026-10-03。本页记录产品安装路径和实现边界；后续公开数据研究的最终实测结论以[验证记录](VALIDATION.md)为准。研究模型适配流程见[中英公开数据操作说明](../research/docs/chinese-public-adaptation.md)。

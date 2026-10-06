@@ -10,7 +10,7 @@
 
 使用 [BAAI/Chinese-LiPS 作者数据](https://huggingface.co/datasets/BAAI/Chinese-LiPS)，固定 revision `db96948538811029011eee44602438a26710ecd9`，许可 CC-BY-NC-SA-4.0。[作者论文](https://arxiv.org/abs/2504.15066)描述参考文本来源。下载器使用嘴部视频和作者文本，不读取音频、幻灯片或 OCR；它不会重新逐字校对所有标签。
 
-基座来自 [CNVSRC2025 官方 VSR](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR) 和[官方发布权重](https://huggingface.co/ReflectionL/CNVSRC2025Baseline)。先阅读 [VSR/LICENSE](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE)，仅用于允许的非商业研究比较。适配器不会自动安装到 GUI，也不会解除中文逐次确认。
+基座来自 [CNVSRC2025 官方 VSR](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR) 和[官方发布权重](https://huggingface.co/ReflectionL/CNVSRC2025Baseline)。先阅读 [VSR/LICENSE](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE)，仅用于允许的非商业研究比较。这些训练脚本不会自动将适配器安装到默认旧版 GUI，也不会解除中文逐次确认。独立的 `desktop/mandarin/` 是操作者显式选择的 LipCN 研究桌面入口，可加载另行提供的本地研究权重；模型和数据许可保持不变。
 
 研究读取器在加载时核对以下来源，随后使用 `weights_only=True` 和完整 state key/形状严格加载：
 
@@ -273,7 +273,7 @@ This workflow adapts an existing model for **visual-only recognition of unrestri
 
 The dataset is [BAAI/Chinese-LiPS](https://huggingface.co/datasets/BAAI/Chinese-LiPS), pinned to revision `db96948538811029011eee44602438a26710ecd9`, under CC-BY-NC-SA-4.0. The [author paper](https://arxiv.org/abs/2504.15066) explains how the reference text was obtained. The downloader uses the authors' labels; it does not independently verify every character in every clip.
 
-The base visual model uses [CNVSRC2025 VSR author code](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR) and the [official checkpoint](https://huggingface.co/ReflectionL/CNVSRC2025Baseline). Read the author's [VSR/LICENSE](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE) before enabling the research reader. These artifacts and derived weights are restricted to the allowed noncommercial comparative research. The scripts do not install an adapter into the GUI, enable automatic Mandarin pasting, or grant deployment rights.
+The base visual model uses [CNVSRC2025 VSR author code](https://github.com/liu12366262626/CNVSRC2025/tree/main/VSR) and the [official checkpoint](https://huggingface.co/ReflectionL/CNVSRC2025Baseline). Read the author's [VSR/LICENSE](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE) before enabling the research reader. These artifacts and derived weights are restricted to the allowed noncommercial comparative research. These training scripts do not automatically install an adapter into the default legacy GUI, enable automatic Mandarin pasting, or grant deployment rights. The separate `desktop/mandarin/` LipCN research desktop entry is explicitly selected by the operator and can load separately supplied local research weights; model and data licenses remain unchanged.
 
 The research loader verifies the following identities before loading the complete checkpoint with `weights_only=True`, exact state keys, and tensor shape checks:
 

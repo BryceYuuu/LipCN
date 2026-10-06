@@ -1,5 +1,7 @@
 # Mandarin validation / 中文验证记录
 
+范围说明 / Scope: 本页记录历史冻结实验；涉及“应用默认入口”“未装入 GUI”的描述均指当时的默认旧版运行方式。新增 `desktop/mandarin/` 是显式选择的 LipCN 研究桌面入口，不改变这些历史指标或模型、数据许可。 This page records frozen historical experiments. Statements about the default application or absence of GUI integration refer to the legacy runtime at the time. The explicitly selected `desktop/mandarin/` LipCN research desktop entry does not change these historical measurements or model/data licenses.
+
 ## Local maintainer-review fixes (2026-10-03) / 维护者反馈本地修复
 
 The latest local code restores English defaults and cleanup, respects disabled context access, uses monotonic capture timing with resilient nearest-frame sampling, and separates research tools. Mandarin and polish retain required confirmation. **368 passed, 13 skipped**; Windows control flow uses simulated OS/UI boundaries. Native Windows UI, real camera/paste and real-model accuracy were not retested. No commit, push or PR update was made. See [the bilingual fix and test record](REVIEW_FIXES.md).

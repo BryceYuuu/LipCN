@@ -1,10 +1,14 @@
 # 公开数据适配与本地无声采集 / Public-data adaptation and optional silent capture
 
+入口范围：本文保留历史训练与评测协议。新[LipCN 中文研究桌面入口](../../desktop/mandarin/)是显式选择的运行方式，会复用研究读取组件；所需权重另行提供，原有许可与人工确认要求继续适用。
+
+Scope: this page preserves historical training and evaluation protocols. The separately selected [LipCN research desktop entry](../../desktop/mandarin/) reuses research loading helpers with user-supplied weights; existing license terms and candidate review still apply.
+
 [English guide](#english-guide)
 
 历史说明：本页固定训练实验记录于 2026-10-02，保留第三轮两轮 CTC 实验的原参数和命令以便复现，不是继续调参的推荐协议。后续研究使用[中英公开数据操作说明](chinese-public-adaptation.md)中的 train/dev-only 选择、完整 epoch 恢复、新测试说话人与冻结 A/B/C 比较；最新结果以[验证记录](../../docs/VALIDATION.md)为准。下方摄像头采集为可选功能，公开数据研究不依赖本次个人录制。
 
-目标是纯无声、自由中文句子。**目前仍未达到日常输入的可用标准。** 本流程分别记录公开数据研究与真实无声摄像头验收，训练报告不会自动替换 GUI 模型或解除中文候选确认。
+目标是纯无声、自由中文句子。**目前仍未达到日常输入的可用标准。** 本流程分别记录公开数据研究与真实无声摄像头验收，这些历史实验的训练报告不会自动替换默认旧版 GUI 模型或解除中文候选确认。
 
 ## 公开数据
 
@@ -21,7 +25,7 @@ uv run python research/scripts/fetch_chinese_lips.py --accept-noncommercial-lice
 
 ## 固定训练实验（2026-10-02 第三轮历史复现）
 
-单独下载并阅读 [CNVSRC2025 源码许可](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE)和[基座权重](https://huggingface.co/ReflectionL/CNVSRC2025Baseline)。源码版本、配置、词表和权重哈希由研究脚本核对。实验使用现有 ESPnet 模块实现兼容结构，不导入作者源码、不将研究权重装入产品。
+单独下载并阅读 [CNVSRC2025 源码许可](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE)和[基座权重](https://huggingface.co/ReflectionL/CNVSRC2025Baseline)。源码版本、配置、词表和权重哈希由研究脚本核对。实验使用现有 ESPnet 模块实现兼容结构，不导入作者源码，也不会自动将研究权重装入默认旧版 GUI。
 
 CNVSRC 使用固定字符词表。先列出无法表示的训练目标；明确选择排除这些**完整训练片段**，保留原始文本和排除记录。这个操作只适用于 train，dev/test 中不支持的字符仍须保留在完整计分中：
 
@@ -66,7 +70,7 @@ uv run python research/scripts/evaluate_cnvsrc.py --accept-research-license \
 
 ```bash
 uv run python research/scripts/collect_chinese.py --output samples/chinese_private/train \
-  --speaker bryce --session day01 --split train
+  --speaker speaker01 --session day01 --split train
 ```
 
 录制前，在终端输入你准备无声说的准确句子。按 SPACE 开始/停止；R 丢弃并重录；Esc 丢弃当前片段并退出。停止后，只有当你确实无声发音、没有耳语/发声且说的文字与提示一致时才按 Enter 保存。说错或漏字请重录。也可用 `--sentences phrases.txt` 提供独立编写的 UTF-8 每行一句文本。不要采用模型识别结果作为参考答案。
@@ -82,7 +86,7 @@ uv run python research/scripts/collect_chinese.py --output samples/chinese_priva
 
 Historical snapshot: **2026-10-02, third research round**. This page retains the original fixed two-epoch CTC pilot and commands for reproduction. It is not the recommended protocol for further model selection after inspecting that pilot's test results. Use the [current bilingual public-data workflow](chinese-public-adaptation.md) for train/dev-only selection, complete-epoch recovery, new test speakers, and frozen A/B/C evaluation. [Validation records](../../docs/VALIDATION.md) contain measured outcomes. Local capture is optional; the public-data experiment does not depend on a personal webcam recording.
 
-The goal is unrestricted, deliberately silent Mandarin sentences. The historical pilot did not establish daily-input usability. Public-data research and real silent-webcam acceptance are recorded separately, and no training report automatically replaces the GUI model or removes candidate review.
+The goal is unrestricted, deliberately silent Mandarin sentences. The historical pilot did not establish daily-input usability. Public-data research and real silent-webcam acceptance are recorded separately, and no report from these historical experiments automatically replaces the default legacy GUI model or removes candidate review.
 
 ### Obtain the pinned public data
 
@@ -99,7 +103,7 @@ The defaults deterministically sample train 180 clips/12 speakers, dev 30/6, and
 
 ### Reproduce the fixed historical CTC pilot
 
-Read the [CNVSRC2025 source license](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE) and obtain the [base checkpoint](https://huggingface.co/ReflectionL/CNVSRC2025Baseline) separately. Research scripts verify source revision and configuration/vocabulary/checkpoint hashes. They construct a compatible architecture using existing ESPnet modules; they do not import author code or install the research checkpoint into the product.
+Read the [CNVSRC2025 source license](https://github.com/liu12366262626/CNVSRC2025/blob/main/VSR/LICENSE) and obtain the [base checkpoint](https://huggingface.co/ReflectionL/CNVSRC2025Baseline) separately. Research scripts verify source revision and configuration/vocabulary/checkpoint hashes. They construct a compatible architecture using existing ESPnet modules; they do not import author code or automatically install the research checkpoint into the default legacy GUI.
 
 For the fixed character vocabulary, explicitly exclude **whole unsupported train clips**, keeping original labels and an exclusion audit. Unsupported dev/test characters remain in complete scoring.
 
@@ -142,7 +146,7 @@ Recording needs no recognition weights. The camera opens only when the user expl
 
 ```bash
 uv run python research/scripts/collect_chinese.py --output samples/chinese_private/train \
-  --speaker bryce --session day01 --split train
+  --speaker speaker01 --session day01 --split train
 ```
 
 Before recording, type the exact intended silent sentence in the terminal. SPACE starts/stops, R discards and repeats, and Esc discards the current clip and exits. After stopping, press Enter only if articulation was genuinely silent, with no whisper/voice, and the spoken text matched the prompt. Rerecord missed or changed words. `--sentences phrases.txt` can provide independently authored UTF-8 prompts, one sentence per line. Model predictions must not become reference answers.

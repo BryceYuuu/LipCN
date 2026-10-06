@@ -1,5 +1,7 @@
 # 中文唇语识别第四轮实测 / Mandarin lipreading: iteration-four measurements
 
+范围说明 / Scope: 本页记录历史冻结实验；涉及“应用默认入口”“未装入 GUI”的描述均指当时的默认旧版运行方式。新增 `desktop/mandarin/` 是显式选择的 LipCN 研究桌面入口，不改变这些历史指标或模型、数据许可。 This page records frozen historical experiments. Statements about the default application or absence of GUI integration refer to the legacy runtime at the time. The explicitly selected `desktop/mandarin/` LipCN research desktop entry does not change these historical measurements or model/data licenses.
+
 ## 中文说明
 
 本轮增加可恢复的编码器训练、开发集解码比较和测试前冻结流程。在 Apple M4 / 16 GiB 上执行，仅使用视频画面，不读取音轨、不使用 LLM 纠错或参考文本提示。应用中的 CMLR 中文入口与本轮 CNVSRC 研究模型分别运行；这些数字衡量研究流程，不是 GUI 准确率。

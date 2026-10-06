@@ -1,5 +1,8 @@
 Lipflow bundles code from these projects:
 
+The full Apache License 2.0 text for the Apache-licensed bundled code is
+provided in LICENSES/Apache-2.0.txt. Original source copyright notices are retained.
+
 - espnet/ — a trimmed copy of ESPnet (Apache License 2.0, Copyright 2017 Johns Hopkins
   University and ESPnet contributors), as vendored by Auto-AVSR and Chaplin. Lipflow patches:
   distutils removed (Python 3.12+), device-agnostic CTC prefix scoring, and cached cross-attention
@@ -49,12 +52,15 @@ Optional Mandarin support:
 - research/scripts/train_chinese_joint_adapter.py, research/scripts/compare_chinese_decoders.py,
   research/scripts/compare_chinese_reports.py and research/scripts/analyze_chinese_errors.py extend
   the separate CNVSRC research entry with train/dev-only adaptation, decoder
-  comparison, frozen paired evaluation and analysis of saved reports. They do not
-  install a model into the GUI. Source weights and derived adaptation tensors retain
+  comparison, frozen paired evaluation and analysis of saved reports. These experiment
+  scripts do not automatically install a model into the default legacy GUI. The
+  separately selected LipCN desktop research entry at desktop/mandarin/ uses locally supplied weights.
+  Source weights and derived adaptation tensors retain
   the author's research/benchmarking restrictions; downloaded Chinese-LiPS material
   retains CC-BY-NC-SA-4.0. This repository distributes code, protocols and aggregate
   results, not weights, adapters, videos, per-clip references/manifests or raw predictions.
-  中文：上述工具属于独立的 CNVSRC 研究入口，不会自动将模型安装到 GUI。
+  中文：上述实验脚本属于独立的 CNVSRC 研究入口，不会自动将模型安装到默认旧版 GUI。
+  desktop/mandarin/ 为显式选择的 LipCN 研究桌面入口，所需权重须由操作者另行提供。
   基座权重与派生适配参数仍受作者研究/基准比较用途限制；下载的 Chinese-LiPS
   材料保留 CC-BY-NC-SA-4.0。仓库仅提供代码、协议和汇总结果，不上传权重、
   适配器、视频、逐条参考文本/清单或原始预测。

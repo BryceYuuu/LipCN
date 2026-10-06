@@ -1,0 +1,8 @@
+# Additional dependencies for the Mandarin app, on top of the root pyproject.toml.
+# These ASR/OpenCC versions were used for the local performance/lifecycle checks.
+# Model weights are separate assets and are never installed by this file.
+faster-whisper==1.2.1
+ctranslate2==4.8.2
+onnxruntime==1.30.0
+opencc-python-reimplemented==0.1.7
+scipy>=1.13,<2

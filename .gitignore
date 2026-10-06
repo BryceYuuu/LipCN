@@ -4,3 +4,19 @@ __pycache__/
 models/
 samples/
 .pytest_cache/
+
+# Local desktop runtime, models and generated evidence
+*.app/
+*.pth
+*.pt
+*.safetensors
+*.onnx
+*.log
+.env
+.env.*
+!.env.example
+.DS_Store
+desktop/mandarin/vendor/
+desktop/mandarin/runtime/
+desktop/mandarin/formatter-model/
+desktop/mandarin/evidence/

@@ -3,10 +3,13 @@
 ## English
 
 This directory contains optional data preparation, adaptation, decoder comparison,
-evaluation, benchmark reports, and manual recording tools. The Lipflow application
-does not import these commands, and they are not included in the application wheel.
-The Mandarin CMLR runtime remains in `lipflow/`; the CNVSRC adapter experiments here
-do not automatically replace the runtime model.
+evaluation, benchmark reports, and manual recording tools. The default legacy
+runtime in `lipflow/` does not import these commands, and the research directory
+is excluded from its application wheel. The explicitly selected
+[LipCN research desktop entry](../desktop/mandarin/) reuses the CNVSRC reader
+and scoring helpers from this directory with separately obtained local weights.
+The experiments do not automatically replace the default legacy CMLR runtime
+or redistribute model weights.
 
 Use a checkout and its installed Python environment. Examples below run from the
 repository root. An absolute script path also works from another directory; relative
@@ -65,8 +68,10 @@ predictions outside Git. Their source licenses remain applicable; see [NOTICE](.
 ## 中文
 
 本目录集中存放可选的数据准备、适配训练、解码比较、评测、基准报告和人工录制
-工具。日常 Lipflow 应用不会导入这些命令，应用 wheel 也不包含研究目录。中文
-CMLR 运行入口仍位于 `lipflow/`，这里的 CNVSRC 适配实验不会自动替换应用模型。
+工具。`lipflow/` 中的默认旧版运行入口不会导入这些命令，其应用 wheel 也不包含研究目录。
+显式选择的[LipCN 中文研究桌面入口](../desktop/mandarin/)会复用这里的 CNVSRC 读取和评分组件，
+并使用操作者另行取得的本地研究权重。研究实验不会自动替换默认旧版 CMLR 模型，
+也不会随源码分发权重。
 
 使用源码检出目录及已安装依赖的 Python 环境。上面的命令示例从仓库根目录运行；
 也可以在任意目录使用脚本的绝对路径。输入、输出的相对路径以执行命令时的目录

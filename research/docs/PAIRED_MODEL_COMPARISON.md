@@ -1,5 +1,7 @@
 # 中文模型同视频对照 / Mandarin models on the same videos
 
+范围说明 / Scope: 本页记录历史冻结实验；涉及“应用默认入口”“未装入 GUI”的描述均指当时的默认旧版运行方式。新增 `desktop/mandarin/` 是显式选择的 LipCN 研究桌面入口，不改变这些历史指标或模型、数据许可。 This page records frozen historical experiments. Statements about the default application or absence of GUI integration refer to the legacy runtime at the time. The explicitly selected `desktop/mandarin/` LipCN research desktop entry does not change these historical measurements or model/data licenses.
+
 ## 中文
 
 本轮把当前 CMLR 运行配方、原始 CNVSRC2025 模型、此前固定的 CNVSRC 编码器适配器放到同一批视频上比较。新增工作是我们编写的视觉稳定化实验、开发集选择、有界数据采样、共享视觉输入、分组评测及反向解码批处理。它们位于独立研究目录，应用没有切换模型，也没有根据测试结果自动启用新处理。

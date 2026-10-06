@@ -1,247 +1,81 @@
-# Lipflow
+# LipCN · 中文语音与唇语输入
 
-**Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
-text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
+**在本机把语音或口型转换成文字，再从三个表达方案中选择。** 由 [BryceYuuu](https://github.com/BryceYuuu) 独立维护，基于 Amy Zhou 开源的 Lipflow 持续开发中文输入体验。
 
-Everything runs locally on your Mac, Windows PC, or Linux. An optional LLM pass fixes the words lip reading gets wrong.
+**Turn speech or lip movements into text on your Mac, then choose from three wording options.** Independently maintained by [BryceYuuu](https://github.com/BryceYuuu), building on Amy Zhou’s open-source Lipflow.
 
-```
- hold ⌥ (right)  ──►  webcam  ──►  face landmarks (live)  ──►  mouth crops, 25 fps
-                                                                   │
-   paste at cursor  ◄──  LLM cleanup  ◄──  beam search + LM  ◄──  VSR encoder (Apple GPU)
-                                       ▲
-                     live preview: greedy CTC every 0.45 s while you talk
-```
+## 功能 / Features
 
-## Setup
+| 中文 | English |
+| --- | --- |
+| **语音优先，口型回退**：有可靠语音时使用本地 Whisper；无声或语音可信度不足时，尝试中文口型识别。 | **Speech first, lip-reading fallback:** local Whisper handles accepted speech; silent or low-confidence audio falls back to the Mandarin visual model. |
+| **三个表达方案**：结果区仅显示“方案一、方案二、方案三”；选择后复制或输入原应用。 | **Three wording options:** a minimal result area shows Option 1, 2 and 3; copy or insert the option you choose. |
+| **本地文字整理**：补标点、整理表达，并检查数字、时间、否定等改动；无法可靠改写时保留原文，允许方案重复。 | **Local wording cleanup:** punctuation and phrasing with checks on numbers, time references, negation and other changes; uncertain edits keep the original wording, so options may repeat. |
+| **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
+| **摄像头与嘴部预览**：查看脸部画面和嘴部跟踪；录制最长 20 秒，结束时保留短暂句尾。 | **Camera and mouth preview:** see the camera feed and mouth tracking; recordings are capped at 20 seconds with a short ending buffer. |
+| **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
+| **分阶段启动与安全退出**：语音就绪后即可开始；其余模型继续准备。加载、识别和资源释放使用同一工作线程。 | **Staged startup and orderly shutdown:** start recording once speech is ready while other models continue loading; one worker owns loading, inference and cleanup. |
 
-Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
+上述功能对应当前 **LipCN 2.1.1**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
 
-```sh
-git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
-cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds /Applications/Lipflow.app
-open /Applications/Lipflow.app
-```
+These features describe **LipCN 2.1.1** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
 
-The first launch opens setup, which takes about 8 minutes:
+## 界面 / Preview
 
-1. **Permissions:** Camera, Input Monitoring and Accessibility, each asked once for "Lipflow".
-   The app is a small signed program that loads this checkout in-process, so those
-   permissions belong to Lipflow rather than to Python. If a switch is on in System
-   Settings but setup still shows it off, click **Restart Lipflow** under Continue.
-2. **Your words:** if you use Wispr Flow, it imports your dictation history (read locally, never
-   uploaded) to learn your phrasing and the names you say.
-3. **Practice:** you silently mouth 24 sentences (taken from your own history when available).
-4. **Train:** it fine-tunes the language model on your phrasing and the lip reader on your face,
-   on this Mac's GPU. Six practice sentences are held out, and the face model is only kept if it
-   reads them better than the stock model. You see the before/after score.
+![LipCN 中文口型测试界面：摄像头预览、嘴部跟踪和识别候选 / Mandarin lip-reading prototype with camera preview, mouth tracking and recognition candidates](docs/images/mandarin-demo.png)
 
-Re-run it any time from the menu → *Set up / train on my face…*. More practice clips help more.
-Everything personal (clips, phrases, trained models) lives in
-`~/Library/Application Support/Lipflow/`. Delete that folder to start over.
+*上图为早期中文纯口型测试界面；当前版本已加入语音优先，并将结果区精简为三个方案。截图中的单句耗时不代表通用性能。*
 
-To start Lipflow at login: System Settings → General → Login Items → add Lipflow. Logs are in
-`~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
-macOS asks for permissions in the terminal's name.
+*The image shows an earlier Mandarin lip-only prototype. The current version adds speech-first recognition and a simpler three-option result area. The timing shown in the screenshot is not a general performance benchmark.*
 
-### Windows
+## 开始使用 / Getting started
 
-Needs Windows 10 or 11 (64-bit) and about 3 GB of disk. In PowerShell:
-
-```powershell
-git clone https://github.com/amywork777/lipflow.git $HOME\code\lipflow
-cd $HOME\code\lipflow
-powershell -ExecutionPolicy Bypass -File setup.ps1   # uv deps, ~1.2 GB of models, Start menu shortcut
+```bash
+git clone https://github.com/BryceYuuu/LipCN.git
+cd LipCN
 ```
 
-Then open **Lipflow** from the Start menu. It lives in the system tray (the pink mouth by the
-clock; click ^ if it's hidden). The first launch opens the same setup as on a Mac, minus
-permissions: your Wispr Flow words, 24 practice sentences, then training on your face.
+按照 **[中文桌面运行说明 / Mandarin desktop setup](desktop/mandarin/README.md)** 安装依赖、准备模型并启动。此仓库发布源代码与测试；大型模型、研究适配权重和数据集需要单独准备，不包含可直接分发的完整安装包。
 
-How it differs from the Mac version:
+Follow **[Mandarin desktop setup](desktop/mandarin/README.md)** to install dependencies, prepare models and launch the app. This repository contains source code and tests. Large models, research adapters and datasets must be obtained separately; this is not a self-contained application installer.
 
-- **Key:** hold **Right Ctrl** (change it in the tray menu → *Push-to-talk key*: Right Alt / AltGr,
-  Left Alt or Right Shift also work). Double-tap for hands-free and Esc to cancel work the same.
-- **Camera:** if it doesn't come on, turn on Settings → Privacy & security → Camera → *Let desktop
-  apps access your camera*. Pick another camera by number in the tray menu.
-- **Speed:** without an NVIDIA GPU the lip reader runs on the processor, so expect a second or two
-  more per sentence than on a Mac (on an M4 Pro the encoder takes 1.7 s on CPU vs 0.16 s on the
-  GPU), and training on your face takes several times longer. With an NVIDIA card, install the
-  CUDA build of PyTorch: `uv pip install torch --index-url https://download.pytorch.org/whl/cu126`
-  (re-run it after `uv sync`, which puts the CPU build back).
-- **Cleanup:** the in-process local model is Mac-only (MLX), so use Claude (`setx ANTHROPIC_API_KEY …`,
-  then restart Lipflow), the [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`), or
-  [Ollama](https://ollama.com) (`ollama pull qwen3:4b`). Without one of these, Lipflow uses the offline rules.
-- **Names from context:** taken from the window title only (on a Mac it also reads the text
-  around your cursor). Learning from your corrections is Mac-only for now.
-- **Start with Windows:** tray menu → *Start with Windows*. Your data lives in `%APPDATA%\Lipflow`
-  (log: `Lipflow.log` there). `uv run lipflow doctor` checks the models and camera.
+1. 准备好模型并允许摄像头、麦克风权限。 / Prepare models and allow camera and microphone access.
+2. 点击“开始说一句”，或在授予输入监控权限后使用右 Command。 / Click Start, or use Right Command after granting Input Monitoring access.
+3. 说话或自然默念，结束后核对三个方案。 / Speak or mouth your sentence, then review the three options.
+4. 选择复制或输入；输入原应用还需要辅助功能权限。 / Choose Copy or Insert; insertion into the original app also requires Accessibility permission.
 
-### Linux
+只在主动开始后采集。结束、取消、隐藏、最小化或关闭会停止采集。模型仍在后台准备时，第一句识别可能需要等待初始化完成。
 
-Needs a 64-bit Linux distro with a webcam, Python 3.11–3.12, and about 3 GB of disk (models + PyTorch).
+Capture begins only after an explicit start. Finishing, cancelling, hiding, minimizing or closing stops capture. If background initialization is still running, the first recognition may wait for it to finish.
 
-```sh
-git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
-cd ~/code/lipflow
-curl -LsSf https://astral.sh/uv/install.sh | sh   # if you don't have uv yet
-uv sync
-./scripts/download-models.sh                        # ~1.2 GB of models
-uv run lipflow doctor
-uv run lipflow                                      # system tray (pink mouth icon)
-```
+## 项目结构 / Project layout
 
-The first launch runs the same setup as on Windows (import Wispr phrases if present, ~24 practice
-sentences, optional training on your face). Personal data lives in
-`$XDG_DATA_HOME/Lipflow` (usually `~/.local/share/Lipflow`). Logs: `Lipflow.log` in that folder.
+| 路径 / Path | 说明 / Description |
+| --- | --- |
+| [`desktop/mandarin/`](desktop/mandarin/) | 当前中文语音与唇语桌面入口 / Current Mandarin speech-and-lip desktop entry |
+| [`lipflow/`](lipflow/) | 共享组件与保留的原有运行入口 / Shared components and retained legacy runtime |
+| [`research/`](research/README.md) | 独立的中文训练、评测与研究报告 / Mandarin training, evaluation and research reports |
+| [`tests/`](tests/), [`desktop/mandarin/tests/`](desktop/mandarin/tests/) | 核心及中文桌面回归测试 / Core and Mandarin desktop regression tests |
+| [旧版英文说明](README.legacy.md) · [旧版中文说明](README.legacy.zh-CN.md) | 原有跨平台入口与设置，其行为和隐私选项与当前中文窗口不同 / Legacy cross-platform entry points with their own behavior and privacy settings |
 
-How it differs from the Mac version:
+## 性能与验证 / Performance and validation
 
-- **Key:** hold **Right Ctrl** by default (tray menu → *Push-to-talk key*: Right Alt / AltGr, Left Alt,
-  or Right Shift). Double-tap for hands-free; Esc cancels.
-- **Paste:** Wayland needs [wl-clipboard](https://github.com/bugaevc/wl-clipboard) and one key
-  tool: [wtype](https://github.com/atx/wtype) on Hyprland and Sway, or
-  [ydotool](https://github.com/ReimuNotMoe/ydotool) (with `ydotoold` running) on GNOME, KDE, and
-  other compositors. X11 needs `xdotool` and `xclip`. `--copy-only` leaves the text on the clipboard.
-- **Tray:** pystray needs PyGObject and an AppIndicator typelib. If the pink icon never appears,
-  install them (Ubuntu: `gir1.2-ayatanaappindicator3-0.1`).
-- **Camera:** PipeWire/v4l2 (`/dev/video0`). Pick a camera by number in the tray menu if the default
-  is wrong.
-- **Speed:** encoder runs on CPU unless you install the CUDA build of PyTorch (same as Windows).
-  Training on your face is CPU-only and slower than on Apple Silicon.
-- **Cleanup:** the in-process MLX model is Mac-only. Use Claude (`export ANTHROPIC_API_KEY=…`) or
-  Ollama (`ollama pull qwen3:4b`, then `uv run lipflow --cleanup ollama`) for better accuracy.
-- **Context / corrections:** names come from the active window title (Hyprland: `hyprctl`; Sway:
-  `swaymsg`; KDE: `kdotool`; X11: `xdotool`). GNOME has no stable title API. Learning from
-  in-field corrections is Mac-only for now (same as Windows).
-- **Global hotkey:** on Wayland Lipflow reads the keyboard from `/dev/input`, so your user needs
-  to be in the `input` group (log in again after adding it). X11 uses the same hook as Windows.
+本机开发测试中，四条 8.6–14.3 秒的公开中文音频，在三个模型驻留且完成预热后，从识别到三个方案平均约 **5.48 秒**（4.88–5.80 秒）。本次启动修复的三次测试中，开始按钮在模型初始化开始后约 **4.1–6.2 秒**可用；其余模型继续加载。这些是特定 Mac 上的小样本结果，并非速度或准确率保证。
 
-### Most accurate: whisper mode
+In local development testing, four public Mandarin clips lasting 8.6–14.3 seconds took an average of **5.48 seconds** from recognition to three options after all models were resident and warmed up (4.88–5.80 seconds). In three startup checks, recording became available about **4.1–6.2 seconds** after model initialization began, while the remaining models continued loading. These small-sample results on one Mac are not speed or accuracy guarantees.
 
-Settings → **Whisper mode**. While you hold the key, Lipflow also listens to a soft whisper and
-reads lips + audio together with the Auto-AVSR audio-visual model (downloaded the first time,
-1.8 GB). On test sentences, lips alone got 31.9% of words wrong; lips + audio got 6.9%. A real
-whisper is less clear than those test clips, so expect somewhere in between. The mic is only on
-while you hold the key.
+当前发布代码全仓测试为 **1041 项通过、24 项跳过**（平台或可选硬件/模型相关）。此前启动修复通过了 214 项无硬件回归测试，并检查了正常关闭、初始化中关闭和重新打开。自动测试不能代替真实麦克风、摄像头、全局快捷键和跨应用输入验证。
 
-### Learning from your corrections
+The release source passed **1,041 tests, with 24 skipped** for platform-specific or optional hardware/model checks. The earlier startup repair passed 214 headless regression tests, with manual checks for normal shutdown, shutdown during initialization and reopening. Automated tests do not replace real microphone, camera, global-hotkey and cross-app insertion checks.
 
-When you fix a word Lipflow typed (within about 30 seconds), it saves that clip with your
-corrected sentence, and the next *Practice & train more* round uses it. Only the text field it
-pasted into is read. Switch it off in Settings.
+## 许可 / License
 
-### Better accuracy: turn on LLM cleanup
+项目代码保留 [MIT License](LICENSE) 与原作者版权声明。第三方组件、模型和数据适用各自许可，详见 [NOTICE](NOTICE)。CNVSRC/CMLR 等研究权重的使用限制不会因为本仓库代码采用 MIT 而改变；此仓库不重新分发这些权重、适配参数或数据集。
 
-Lip reading can't tell apart words that look the same on the lips (p/b/m, f/v, t/d/n…), so the raw
-model output reads like "WALLET OFFICER" when you said "while in office". Lipflow sends the model's
-top-3 guesses plus your last few dictations to an LLM, which picks the sentence you meant and
-fixes casing, punctuation and numbers. You choose which one under **Cleanup** in the menu bar (tray
-on Windows), or with `--cleanup <name>` for one run. **Automatic**, the default, uses Claude if you've
-set a key, otherwise the on-device model, otherwise the offline rules.
+The project code retains its [MIT License](LICENSE) and original copyright notice. Third-party components, models and datasets retain their own terms; see [NOTICE](NOTICE). The MIT code license does not remove the restrictions on research weights such as CNVSRC/CMLR. Those weights, adapters and datasets are not redistributed here.
 
-1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
-   `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
-   mis-read sentences.
-2. **ChatGPT (Codex CLI)**: uses your ChatGPT plan, no API key. Install the
-   [Codex CLI](https://developers.openai.com/codex/cli) (`brew install --cask codex` or
-   `npm install -g @openai/codex`), run `codex login`, then pick it in the menu. Each sentence is one
-   read-only `codex exec` run in an empty folder. Override the model with `LIPFLOW_CODEX_MODEL`.
-3. **On-device model**: Qwen3-0.6B 4-bit running in-process on Apple Silicon
-   via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
-   Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
-   worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
-4. **Ollama**: `ollama pull qwen3:4b`, then pick it in the menu (override with `LIPFLOW_OLLAMA_MODEL`).
-5. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
+## 致谢 / Acknowledgements
 
-**Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.
+感谢 **[Amy Zhou](https://github.com/amywork777)** 创建并开源 **[Lipflow](https://github.com/amywork777/lipflow)**，让这个项目有了起点。也感谢原项目所依赖的研究者与开源贡献者。本仓库在原作基础上独立维护，继续探索中文语音与唇语输入。
 
-```sh
-uv run lipflow import-wispr     # or: --from-text my-writing.txt
-```
-
-This reads Wispr Flow's local database read-only, prints only counts, and saves your phrases to
-`~/Library/Application Support/Lipflow/phrases.txt`. Nothing leaves your Mac. Lipflow then:
-picks between the lip-reader's top 5 guesses using a small model of the word pairs you use;
-shows the cleanup model your past sentences closest to what it read; and adds names you
-capitalise often to your custom words for review. Restart Lipflow afterwards.
-
-**Custom words.** Names are the hardest thing to lip-read (a name is just lip shapes). Put yours
-in the Lipflow menu → *Edit custom words*, one per line (`~/Library/Application Support/Lipflow/words.txt`).
-A guess that contains one of your words wins over the others and gets your capitalization, and
-the LLM is told about them.
-
-## Using it
-
-| Do this | To |
-|---|---|
-| Hold **Right Option**, mouth the words, release | dictate |
-| Double-tap **Right Option** … tap again | hands-free (up to 60 s) |
-| **Esc** while listening | cancel |
-| Lipflow menu → Copy last dictation / Open history | get text back |
-
-Lipflow keeps filming for 0.4 s after you release the key, because the model needs the frames
-after the last word to read it.
-
-Options: `uv run lipflow --help`
-
-```
---key {right_option,left_option,right_command,right_control,fn}
---cleanup {auto,claude,local,ollama,basic}
---beam N          beam size (default 10)
---copy-only       copy to the clipboard instead of pasting
---camera N|FILE   camera index, or a video file to stand in for the webcam
-```
-
-Lip-read a video file: `uv run lipflow file talk.mp4 --start 10 --end 20`
-
-## How it works
-
-- **Model:** [Auto-AVSR](https://github.com/mpc001/auto_avsr) visual-only speech recognition trained
-  on LRS3 (19.1% WER on the benchmark). A 3D-conv ResNet front end and a Conformer encoder feed a
-  Transformer decoder plus CTC, with a subword Transformer language model in the beam search.
-- **Preprocessing:** MediaPipe FaceLandmarker runs on every frame *while you're recording*, so
-  there's no second detection pass afterwards. Eye, nose-base and mouth anchors are aligned to the
-  training mean face, then 96×96 grayscale mouth crops are resampled to the 25 fps the model expects.
-- **Speed (M4 Pro, 9 s utterance):** encoder 0.16 s on the Apple GPU (it's 1.7 s on CPU), beam
-  search about 0.8–1.6 s on CPU (faster than MPS for thousands of tiny ops), for about 1–2 s from
-  release to text. Two patches to the vendored ESPnet help: cross-attention keys/values are
-  projected once per utterance instead of per hypothesis per step (25% faster beam search), and CTC
-  scoring works on any device.
-
-Accuracy on held-out news footage (public-domain White House addresses), raw model output:
-
-| Said | Read |
-|---|---|
-| Born in New York City, and raised mostly in Chicago, Nancy Davis graduated from Smith College in 1943. | BORN IN NEW YORK CITY AND RAISED MOSTLY IN CHICAGO NANCY DAVIS GRADUATED FROM SMITH COLLEGE IN NINETEEN FORTY THREE |
-| …a real-life Hollywood romance with the love of her life, Ronald Reagan, whom she married in 1952. | ROMANCE WITH THE LOVE OF HER LIFE RONALD REAGAN WHOM SHE MARRIED IN NINETEEN FIFTY TWO |
-| Presidents have delivered some form of final message while in office - a farewell address to the American people. | PRESIDENTS HAVE DELIVERED SOME FORM OF FINAL MESSAGE WHILE IN OFFICE FAREWELL ADDRESS TO THE AMERICAN PEOPLE |
-
-Silently mouthed speech is harder than filmed speech (smaller lip movements), so expect more
-errors on your own webcam. That's what the LLM cleanup is for.
-
-## Development
-
-```sh
-./setup.sh --samples      # also fetch the public-domain test clips
-uv run pytest             # the paste test is opt-in: LIPFLOW_TEST_PASTE=1
-```
-
-On Windows: `setup.ps1 -Samples`, then `uv run pytest`. CI runs the whole Windows setup and reads
-a real clip on every push (`.github/workflows/windows.yml`).
-
-Code map: `lipflow/face.py` (landmarks → mouth crops), `vsr.py` (model), `camera.py`, `hotkey.py`
-(Quartz event tap; pynput's macOS listener crashes on recent macOS), `paste.py`, `hud.py`,
-`cleanup.py`, `app.py` (wiring + menu bar). Windows: `lipflow/win/` (tray app, overlay, setup
-window, pynput key hook, clipboard paste). Shared by both: `ptt.py` (key timing), `dictation.py`,
-`practice.py`. See `NOTICE` for bundled code and model licensing.
-The LRS3-trained weights are for non-commercial research use.
-
-## License
-
-MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own license, listed in
-[NOTICE](NOTICE). The model weights that setup.sh downloads come from the LRS3 dataset, which is
-for non-commercial research use only.
-
-
-Optional Mandarin research tooling, frozen benchmark reports, dataset protocols and the explicitly operated collector live under [research/](research/README.md). They are separate from the runtime and packaged wheel.
+Thank you to **[Amy Zhou](https://github.com/amywork777)** for creating and open-sourcing **[Lipflow](https://github.com/amywork777/lipflow)**, the foundation of this project. Thanks also to the researchers and open-source contributors behind its components. This repository is maintained independently and continues exploring Mandarin speech and lip-based input.
