@@ -21,12 +21,38 @@ jobs:
       - name: Install deps and download models
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2 xvfb xauth
+          sudo apt-get install -y -qq libgl1 libglib2.0-0 libevdev2 xvfb xauth xclip xdotool
           uv sync
           ./scripts/download-models.sh --samples
       - name: Tests
         run: xvfb-run -a uv run pytest -q -rs
-      - name: lipflow doctor (no camera on CI, so this only prints)
-        run: uv run lipflow doctor; exit 0
+      - name: lipflow doctor (only a missing CI camera is expected)
+        run: |
+          xvfb-run -a uv run python - <<'PY'
+          import re
+          import subprocess
+          import sys
+
+          result = subprocess.run(
+              [sys.executable, "-m", "lipflow", "doctor"],
+              capture_output=True, text=True, encoding="utf-8",
+          )
+          sys.stdout.write(result.stdout)
+          sys.stderr.write(result.stderr)
+          output = result.stdout + result.stderr
+          failures = [line.strip() for line in result.stdout.splitlines()
+                      if line.lstrip().startswith("✗")]
+          complete = result.stdout.startswith("Lipflow doctor\n")
+          healthy = result.returncode == 0 and not failures and result.stdout.rstrip().endswith("All good.")
+          camera_only = (
+              result.returncode == 1 and len(failures) == 1
+              and re.fullmatch(r"✗ Camera \d+ opens and sends frames", failures[0]) is not None
+              and result.stdout.rstrip().endswith("Fix the ✗ items above, then run `lipflow`.")
+          )
+          if not complete or "Traceback" in output or not (healthy or camera_only):
+              raise SystemExit("Unexpected doctor failure; only an unavailable CI camera is allowed.")
+          if camera_only:
+              print("CI has no camera; all other doctor checks passed.")
+          PY
       - name: Lip-read a sample video end to end
-        run: uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic
+        run: xvfb-run -a uv run lipflow file samples/2016-03-12.mov --start 20.4 --end 28.1 --cleanup basic
