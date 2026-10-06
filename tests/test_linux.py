@@ -13,24 +13,30 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Linux only")
 
 
 def test_data_lives_in_xdg(monkeypatch):
-    monkeypatch.delenv("LIPFLOW_HOME", raising=False)
-    monkeypatch.setenv("XDG_DATA_HOME", "/tmp/lipflow-xdg")
     import lipflow.paths as paths
+    original_home = paths.HOME
     try:
-        assert importlib.reload(paths).HOME == "/tmp/lipflow-xdg/Lipflow"
+        with monkeypatch.context() as env:
+            env.delenv("LIPFLOW_HOME", raising=False)
+            env.setenv("XDG_DATA_HOME", "/tmp/lipflow-xdg")
+            assert importlib.reload(paths).HOME == "/tmp/lipflow-xdg/Lipflow"
     finally:
         importlib.reload(paths)
+    assert paths.HOME == original_home
 
 
 def test_xdg_default_is_local_share(monkeypatch):
-    monkeypatch.delenv("LIPFLOW_HOME", raising=False)
-    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
-    monkeypatch.setenv("HOME", "/home/lipflow")
     import lipflow.paths as paths
+    original_home = paths.HOME
     try:
-        assert importlib.reload(paths).HOME == "/home/lipflow/.local/share/Lipflow"
+        with monkeypatch.context() as env:
+            env.delenv("LIPFLOW_HOME", raising=False)
+            env.delenv("XDG_DATA_HOME", raising=False)
+            env.setenv("HOME", "/home/lipflow")
+            assert importlib.reload(paths).HOME == "/home/lipflow/.local/share/Lipflow"
     finally:
         importlib.reload(paths)
+    assert paths.HOME == original_home
 
 
 def _stub_tools(monkeypatch, paste, present):

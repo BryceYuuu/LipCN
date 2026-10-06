@@ -12,12 +12,15 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 def test_data_lives_in_appdata(monkeypatch):
     import importlib
     import lipflow.paths as paths
-    monkeypatch.delenv("LIPFLOW_HOME", raising=False)
-    monkeypatch.setenv("APPDATA", r"C:\Users\me\AppData\Roaming")
+    original_home = paths.HOME
     try:
-        assert importlib.reload(paths).HOME == r"C:\Users\me\AppData\Roaming\Lipflow"
+        with monkeypatch.context() as env:
+            env.delenv("LIPFLOW_HOME", raising=False)
+            env.setenv("APPDATA", r"C:\Users\me\AppData\Roaming")
+            assert importlib.reload(paths).HOME == r"C:\Users\me\AppData\Roaming\Lipflow"
     finally:
         importlib.reload(paths)
+    assert paths.HOME == original_home
 
 
 def test_clipboard_round_trip_with_unicode():
