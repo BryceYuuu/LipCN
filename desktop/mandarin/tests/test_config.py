@@ -27,6 +27,7 @@ def clean_overrides(monkeypatch):
 
 def test_defaults_follow_checkout_and_home_without_creating_files(monkeypatch, tmp_path):
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
     config = runpy.run_path(str(CONFIG))
     cache = tmp_path / '.cache' / 'lipcn'
     models = cache / 'models' / 'mandarin'
@@ -55,6 +56,7 @@ def test_cache_and_model_root_overrides_cascade(monkeypatch, tmp_path):
 @pytest.mark.parametrize('constant,variable', OVERRIDES.items())
 def test_individual_paths_support_home_expansion(monkeypatch, tmp_path, constant, variable):
     monkeypatch.setenv('HOME', str(tmp_path))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path))
     monkeypatch.setenv(variable, '~/custom asset')
     config = runpy.run_path(str(CONFIG))
     assert config[constant] == tmp_path / 'custom asset'

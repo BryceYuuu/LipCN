@@ -34,7 +34,7 @@ class Widget:
 @pytest.fixture
 def controller(tmp_path, monkeypatch):
     wanted = {'_infer', '_inferred', '_infer_error', '_discarded', '_status'}
-    parsed = ast.parse(SOURCE.read_text())
+    parsed = ast.parse(SOURCE.read_text(encoding='utf-8'))
     cls = next(node for node in parsed.body if isinstance(node, ast.ClassDef) and node.name == 'LiveTest')
     methods = [node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
     assert {method.name for method in methods} == wanted
@@ -124,7 +124,7 @@ def test_rejected_audio_and_bad_lips_fail_without_formatting(controller, rec, pr
     controller.formatter.format.assert_not_called()
     assert controller.completed == 0 and controller.error
     assert '本句识别失败' in controller.result.text
-    assert json.loads(controller.status_path.read_text())['state'] == 'inference_error'
+    assert json.loads(controller.status_path.read_text(encoding='utf-8'))['state'] == 'inference_error'
 
 
 def test_cancelled_before_start_skips_every_model(controller):
@@ -174,7 +174,7 @@ def test_status_on_success_contains_no_private_text_or_samples(controller, tmp_p
     assert PRIVATE_TEXT in controller.result.text  # text is allowed in live UI memory
     files = list(tmp_path.iterdir())
     assert files == [controller.status_path]
-    payload = controller.status_path.read_text()
+    payload = controller.status_path.read_text(encoding='utf-8')
     assert PRIVATE_TEXT not in payload and '原始识别' not in payload
     metadata = json.loads(payload)
     assert not metadata['audio_persisted'] and not metadata['frames_persisted']
@@ -185,8 +185,8 @@ def test_status_on_success_contains_no_private_text_or_samples(controller, tmp_p
 def test_status_on_error_does_not_serialize_exception_text(controller):
     controller.asr.transcribe.side_effect = ValueError(PRIVATE_TEXT)
     controller._infer(3, None, np.empty(0, np.float32))
-    assert PRIVATE_TEXT not in controller.status_path.read_text()
-    assert json.loads(controller.status_path.read_text())['error'] is True
+    assert PRIVATE_TEXT not in controller.status_path.read_text(encoding='utf-8')
+    assert json.loads(controller.status_path.read_text(encoding='utf-8'))['error'] is True
 
 
 def test_result_shows_only_three_choices_without_changing_candidate_text(controller):

@@ -1,8 +1,8 @@
 # LipCN · 中文语音与唇语输入
 
-**在本机把语音或口型转换成文字，再从三个表达方案中选择。** 由 [BryceYuuu](https://github.com/BryceYuuu) 独立维护，基于 Amy Zhou 开源的 Lipflow 持续开发中文输入体验。
+**在本机把语音或口型转换成文字，再从三个表达方案中选择。** 由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护，专注中文输入体验。
 
-**Turn speech or lip movements into text on your Mac, then choose from three wording options.** Independently maintained by [BryceYuuu](https://github.com/BryceYuuu), building on Amy Zhou’s open-source Lipflow.
+**Turn speech or lip movements into text on your Mac, then choose from three wording options.** Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu), with a focus on Mandarin input.
 
 ## 功能 / Features
 

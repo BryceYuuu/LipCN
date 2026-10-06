@@ -5,6 +5,10 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Match the UTF-8 source, metadata, and subprocess output used by this project.
+env:
+  PYTHONUTF8: "1"
+
 jobs:
   test:
     runs-on: windows-latest

@@ -173,7 +173,7 @@ class Harness:
             'NSApplication': SimpleNamespace(sharedApplication=lambda: SimpleNamespace(
                 activateIgnoringOtherApps_=lambda force: self.activations.append(force))),
         }
-        tree = ast.parse(SOURCE.read_text())
+        tree = ast.parse(SOURCE.read_text(encoding='utf-8'))
         original = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == 'LiveTest')
         methods = []
         for node in original.body:

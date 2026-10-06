@@ -22,7 +22,7 @@ def prior(tmp_path, name='prior.json', speakers=('001',), split='train'):
              'samples': [{'speaker': f'chinese-lips:{speaker}', 'source_id': f'{speaker}_25_M_KJ_001'}
                          for speaker in speakers]}
     path = tmp_path / name
-    path.write_text(json.dumps(value))
+    path.write_text(json.dumps(value), encoding='utf-8')
     return path
 
 
@@ -69,9 +69,9 @@ def test_exclusions_union_every_prior_split_without_labels_or_media(tmp_path):
     assert [entry['sample_count'] for entry in evidence] == [2, 1, 2]
     assert all(entry['manifest_sha256'] == hashlib.sha256(path.read_bytes()).hexdigest()
                for entry, path in zip(evidence, paths))
-    value = json.loads(paths[0].read_text())
+    value = json.loads(paths[0].read_text(encoding='utf-8'))
     value['samples'][0].update(reference='不要用内容决定排除', raw='旧预测', video='missing.mp4')
-    paths[0].write_text(json.dumps(value))
+    paths[0].write_text(json.dumps(value), encoding='utf-8')
     assert holdout.exclusion_identities(paths)[0] == excluded
 
 
@@ -85,8 +85,8 @@ def test_exclusions_union_every_prior_split_without_labels_or_media(tmp_path):
 ])
 def test_malformed_exclusions_stop_before_metadata_or_network(tmp_path, monkeypatch, change):
     path = prior(tmp_path)
-    value = json.loads(path.read_text()); value.update(change)
-    path.write_text(json.dumps(value))
+    value = json.loads(path.read_text(encoding='utf-8')); value.update(change)
+    path.write_text(json.dumps(value), encoding='utf-8')
     monkeypatch.setattr(holdout.bounded, '_metadata', lambda *args: pytest.fail('must validate prior source first'))
     with pytest.raises(ValueError):
         holdout.prepare_holdout(tmp_path / 'out', **options(tmp_path, [path]))
@@ -118,7 +118,7 @@ def test_fetch_persists_true_publisher_split_and_verified_original_labels(tmp_pa
     requests = fake_source(monkeypatch)
     out = tmp_path / 'out'
     summary = holdout.prepare_holdout(out, **options(tmp_path, excluded))
-    manifest = json.loads((out / 'test.json').read_text())
+    manifest = json.loads((out / 'test.json').read_text(encoding='utf-8'))
     assert summary['samples'] == 12 and summary['speakers'] == 3
     assert summary['official_source_split'] == 'train' and summary['local_split'] == 'test'
     assert manifest['split'] == 'test' and manifest['official_source_split'] == 'train'
@@ -145,7 +145,7 @@ def test_same_seed_ignores_metadata_order_label_quality_and_length(tmp_path, mon
     altered = [dict(row, TEXT=('不' * (index + 1))) for index, row in enumerate(reversed(rows()))]
     fake_source(monkeypatch, altered)
     holdout.prepare_holdout(tmp_path / 'two', **options(tmp_path, excluded))
-    a, b = [json.loads((tmp_path / name / 'test.json').read_text())['samples'] for name in ('one', 'two')]
+    a, b = [json.loads((tmp_path / name / 'test.json').read_text(encoding='utf-8'))['samples'] for name in ('one', 'two')]
     assert [sample['source_id'] for sample in a] == [sample['source_id'] for sample in b]
 
 
@@ -194,7 +194,7 @@ def test_full_face_matches_exact_author_identity_and_preserves_nonwebcam_domain(
     out = tmp_path / 'out'
     result = holdout.prepare_holdout(out, **options(tmp_path, [prior(tmp_path)],
                  source_split='test', count=1, speakers=1, media='full_face'))
-    sample = json.loads((out / 'test.json').read_text())['samples'][0]
+    sample = json.loads((out / 'test.json').read_text(encoding='utf-8'))['samples'][0]
     assert sample['domain'] == 'full_face' and sample['mouth_roi'] is False
     assert sample['articulation'] == 'voiced'
     assert sample['source_frame_width'] == 1280 and sample['source_frame_height'] == 720
