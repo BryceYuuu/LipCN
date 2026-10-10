@@ -1,8 +1,8 @@
 # LipCN · 中文桌面运行说明 / Mandarin desktop setup
 
-本目录是当前中文桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，新增语音优先、三个表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
+本目录是当前桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，提供中文语音优先、英文口型识别、简繁输出、三个表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
 
-This is the current Mandarin desktop entry. It uses components from `lipflow/` and `research/`, adding speech-first recognition, three wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
+This is the current desktop entry. It uses components from `lipflow/` and `research/`, providing Mandarin speech-first recognition, English lip reading, simplified/traditional output, three wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
 
 ## 1. 环境 / Environment
 
@@ -36,6 +36,8 @@ Startup does not download models. Read each source’s terms, then put the asset
 | 口型配置与词表 / Visual config and vocabulary | `~/.cache/lipcn/CNVSRC2025/` | [CNVSRC2025](https://github.com/liu12366262626/CNVSRC2025), revision `e5c4454016ba4eef9e586e77dd58e8981bb5c3e1`; 保留 `VSR/conf` 与 `VSR/datamodule` 布局 / Preserve the source layout |
 | 本地口型适配参数 / Local visual adapter | `~/.cache/lipcn/models/mandarin/round8-encoder-adapter.pth` | 使用与上述基座兼容的本地 adapter；本仓库不分发开发者的 Round8 参数 / Supply a compatible local adapter; the developer’s Round8 adapter is not redistributed |
 | 脸部跟踪 / Face tracking | 仓库内 / In checkout: `models/face_landmarker.task` | [MediaPipe Face Landmarker](https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task) |
+| 英文口型 / English visual model | `~/.cache/lipcn/models/english/vsr/` | [LRS3_V_WER19.1](https://huggingface.co/Amanvir/LRS3_V_WER19.1), revision `c0b413f56b164565865a63f00774ee55a9738cc5`; `model.json` 与 / and `model.pth` |
+| 英文解码语言模型 / English decoding language model | `~/.cache/lipcn/models/english/lm/` | [lm_en_subword](https://huggingface.co/Amanvir/lm_en_subword), revision `f4e39b6d0904b2a900c53a2fff0377796c797bdc`; `model.json` 与 / and `model.pth` |
 
 只准备语音模型也可以使用语音输入；缺少口型基座、词表或兼容适配参数时，口型回退不可用。缺少表达模型时会使用保守的基本整理，三个方案可能重复。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
 
@@ -63,7 +65,19 @@ With the Hugging Face CLI, download the speech and wording models at the pinned 
 .venv/bin/hf download mlx-community/Qwen3-1.7B-4bit \
   --revision 3b1b1768f8f8cf8351c712464f906e86c2b8269e \
   --local-dir "$HOME/.cache/lipcn/models/mandarin/Qwen3-1.7B-4bit"
+.venv/bin/hf download Amanvir/LRS3_V_WER19.1 \
+  --revision c0b413f56b164565865a63f00774ee55a9738cc5 \
+  --include model.json model.pth \
+  --local-dir "$HOME/.cache/lipcn/models/english/vsr"
+.venv/bin/hf download Amanvir/lm_en_subword \
+  --revision f4e39b6d0904b2a900c53a2fff0377796c797bdc \
+  --include model.json model.pth \
+  --local-dir "$HOME/.cache/lipcn/models/english/lm"
 ```
+
+英文模型约 1.2 GB；需同时准备 VSR 和 LM 的四个文件。语言切换不会下载文件，也不会同时保留中英文视觉模型。简繁转换使用离线 OpenCC，无需额外神经网络模型。
+
+The English assets total about 1.2 GB and require all four VSR/LM files. Switching languages does not download files or keep both visual models resident. Offline OpenCC handles Chinese script conversion without an additional neural model.
 
 ## 3. 启动与路径配置 / Launch and path configuration
 
@@ -84,6 +98,7 @@ Set these variables before launch to reuse existing model files:
 | `LIPCN_PYTHON` | Python 可执行文件 / Python executable |
 | `LIPCN_CACHE_DIR` | 缓存根目录，默认 `~/.cache/lipcn` / Cache root |
 | `LIPCN_MANDARIN_MODELS` | 模型根目录，默认 `<cache>/models/mandarin` / Model root |
+| `LIPCN_ENGLISH_MODELS` | 英文模型根目录，含 `vsr/` 与 `lm/`，默认 `<cache>/models/english` / English model root containing `vsr/` and `lm/` |
 | `LIPCN_ASR_MODEL` | 语音模型目录 / ASR model directory |
 | `LIPCN_FORMATTER_MODEL` | MLX 表达模型目录 / Wording model directory |
 | `LIPCN_CNVSRC_CHECKPOINT` | 口型基座文件 / Visual checkpoint file |
@@ -104,6 +119,9 @@ Keep models, recordings, videos, runtime state, personal profiles and `.env` fil
 
 ## 4. 使用与验证 / Use and verification
 
+- 右上角语言选择提供“简体中文”“繁體中文”“English”，每次启动默认简体中文。简繁共用中文识别，只转换最终结果字形；复制和输入保持所选字形。 / The top-right language selector offers Simplified Chinese, Traditional Chinese and English, defaulting to Simplified Chinese on each launch. Chinese modes share one recognizer; final output, copy and insertion use the selected writing system.
+- English 只使用摄像头和英文口型模型，不启动麦克风、不使用中文语音识别，也不翻译。 / English uses only the camera and English visual model, without microphone capture, Mandarin ASR or translation.
+- 简繁切换无需重载模型；中英文切换会释放原视觉模型并加载另一套。加载、开始准备、录制或识别时不可切换语言；缺少模型会显示错误，可换回中文继续使用。 / Chinese script switches do not reload the model. Mandarin/English switches release the previous visual model before loading the next. Selection is disabled during loading, capture preparation, recording or recognition; missing assets show an error, and switching back to Chinese remains available.
 - 点击开始，或允许输入监控权限后按右 Command；再次按下结束，Esc 取消。 / Click Start, or use Right Command after allowing Input Monitoring; press again to finish, Esc to cancel.
 - 摄像头和麦克风仅在开始后采集；复制/输入必须由用户选择。 / Capture starts only on request; copying and insertion require an explicit choice.
 - 从终端启动时，macOS 权限可能显示为终端或 Python；按系统设置中的实际名称授权。 / When launched from a terminal, macOS may assign permissions to that terminal or Python; use the identity shown in System Settings.

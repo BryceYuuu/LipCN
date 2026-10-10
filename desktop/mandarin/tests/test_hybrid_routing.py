@@ -14,6 +14,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
+from languages import DEFAULT_LANGUAGE, recognition_language
 
 SOURCE = Path(__file__).resolve().parents[1] / 'live_test.py'
 PRIVATE_TEXT = '这是只在内存中显示的私人测试句子'
@@ -41,6 +42,7 @@ def controller(tmp_path, monkeypatch):
     for method in methods:
         method.decorator_list = []
     env = {'time': time, 'np': np, 'json': json, 'os': os,
+           'DEFAULT_LANGUAGE': DEFAULT_LANGUAGE, 'recognition_language': recognition_language,
            'STATUS': tmp_path / 'status.json', 'TAIL_SECONDS': 0.4, 'MAX_SECONDS': 20,
            'AppHelper': SimpleNamespace(callAfter=lambda fn, *args: fn(*args)),
            'clip_problem': Mock(return_value=None),
@@ -100,7 +102,7 @@ def test_accepted_audio_skips_lip_quality_and_model_even_without_camera(controll
     controller.env['rois_for'].assert_not_called()
     controller.reader.encode.assert_not_called()
     controller.backend.configured_hypotheses.assert_not_called()
-    controller.formatter.format.assert_called_once_with([PRIVATE_TEXT], source='speech')
+    controller.formatter.format.assert_called_once_with([PRIVATE_TEXT], source='speech', language='zh-Hans')
     assert controller.completed == 1 and controller.last_route == 'speech'
 
 
@@ -112,7 +114,7 @@ def test_rejected_or_empty_audio_falls_back_to_lips(controller, reason, audio):
     controller.env['clip_problem'].assert_called_once()
     controller.reader.encode.assert_called_once()
     controller.backend.configured_hypotheses.assert_called_once()
-    controller.formatter.format.assert_called_once_with(['口型原始内容'], source='lips')
+    controller.formatter.format.assert_called_once_with(['口型原始内容'], source='lips', language='zh-Hans')
     assert controller.completed == 1 and controller.last_route == 'lips'
 
 

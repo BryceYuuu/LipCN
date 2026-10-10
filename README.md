@@ -4,15 +4,16 @@
 
 **Turn speech or lip movements into text on your Mac, then choose from three wording options.** Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu), with a focus on Mandarin input.
 
-LipCN 专注于中文版本的开发。如需英文版本，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
+LipCN 专注于中文输入，并集成原项目的英文口型识别。体验完整的原版英文应用，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
 
-LipCN focuses on developing the Mandarin version. For the English version, check out the original [Lipflow project](https://github.com/amywork777/lipflow) by [Amy Zhou (@amywork777)](https://github.com/amywork777).
+LipCN focuses on Mandarin input and also integrates the original English lip-reading model. For the full original English application, check out [Lipflow](https://github.com/amywork777/lipflow) by [Amy Zhou (@amywork777)](https://github.com/amywork777).
 
 ## 功能 / Features
 
 | 中文 | English |
 | --- | --- |
-| **语音优先，口型回退**：有可靠语音时使用本地 Whisper；无声或语音可信度不足时，尝试中文口型识别。 | **Speech first, lip-reading fallback:** local Whisper handles accepted speech; silent or low-confidence audio falls back to the Mandarin visual model. |
+| **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output for display, copy and insertion; English uses the original visual model with camera-only capture. |
+| **中文语音优先，口型回退**：有可靠语音时使用本地 Whisper；无声或语音可信度不足时，尝试中文口型识别。 | **Mandarin speech first, lip-reading fallback:** local Whisper handles accepted speech; silent or low-confidence audio falls back to the Mandarin visual model. |
 | **三个表达方案**：结果区仅显示“方案一、方案二、方案三”；选择后复制或输入原应用。 | **Three wording options:** a minimal result area shows Option 1, 2 and 3; copy or insert the option you choose. |
 | **本地文字整理**：补标点、整理表达，并检查数字、时间、否定等改动；无法可靠改写时保留原文，允许方案重复。 | **Local wording cleanup:** punctuation and phrasing with checks on numbers, time references, negation and other changes; uncertain edits keep the original wording, so options may repeat. |
 | **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
@@ -20,9 +21,9 @@ LipCN focuses on developing the Mandarin version. For the English version, check
 | **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
 | **分阶段启动与安全退出**：语音就绪后即可开始；其余模型继续准备。加载、识别和资源释放使用同一工作线程。 | **Staged startup and orderly shutdown:** start recording once speech is ready while other models continue loading; one worker owns loading, inference and cleanup. |
 
-上述功能对应当前 **LipCN 2.1.1**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
+上述功能对应当前 **LipCN 2.2.0**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
 
-These features describe **LipCN 2.1.1** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
+These features describe **LipCN 2.2.0** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
 
 ## 界面 / Preview
 
@@ -44,13 +45,17 @@ cd LipCN
 Follow **[Mandarin desktop setup](desktop/mandarin/README.md)** to install dependencies, prepare models and launch the app. This repository contains source code and tests. Large models, research adapters and datasets must be obtained separately; this is not a self-contained application installer.
 
 1. 准备好模型并允许摄像头、麦克风权限。 / Prepare models and allow camera and microphone access.
-2. 点击“开始说一句”，或在授予输入监控权限后使用右 Command。 / Click Start, or use Right Command after granting Input Monitoring access.
+2. 选择“简体中文”“繁體中文”或“English”，待模型就绪后点击“开始说一句”，也可使用已授权的右 Command。 / Choose Simplified Chinese, Traditional Chinese or English; once ready, click Start or use an authorized Right Command hotkey.
 3. 说话或自然默念，结束后核对三个方案。 / Speak or mouth your sentence, then review the three options.
 4. 选择复制或输入；输入原应用还需要辅助功能权限。 / Choose Copy or Insert; insertion into the original app also requires Accessibility permission.
 
 只在主动开始后采集。结束、取消、隐藏、最小化或关闭会停止采集。模型仍在后台准备时，第一句识别可能需要等待初始化完成。
 
 Capture begins only after an explicit start. Finishing, cancelling, hiding, minimizing or closing stops capture. If background initialization is still running, the first recognition may wait for it to finish.
+
+每次打开默认简体中文。简繁切换即时生效；中英文切换需要加载对应模型。加载、录制或识别过程中暂不可切换语言。English 识别英文口型，不调用语音识别或翻译。
+
+Each launch defaults to Simplified Chinese. Switching Chinese writing systems is immediate; switching between Mandarin and English loads the corresponding model. Language selection is disabled while loading, recording or recognizing. English reads English lip movements without speech recognition or translation.
 
 ## 项目结构 / Project layout
 
@@ -68,9 +73,9 @@ Capture begins only after an explicit start. Finishing, cancelling, hiding, mini
 
 In local development testing, four public Mandarin clips lasting 8.6–14.3 seconds took an average of **5.48 seconds** from recognition to three options after all models were resident and warmed up (4.88–5.80 seconds). In three startup checks, recording became available about **4.1–6.2 seconds** after model initialization began, while the remaining models continued loading. These small-sample results on one Mac are not speed or accuracy guarantees.
 
-当前发布代码全仓测试为 **1041 项通过、24 项跳过**（平台或可选硬件/模型相关）。此前启动修复通过了 214 项无硬件回归测试，并检查了正常关闭、初始化中关闭和重新打开。自动测试不能代替真实麦克风、摄像头、全局快捷键和跨应用输入验证。
+当前发布代码全仓测试为 **1136 项通过、24 项跳过**（平台或可选硬件/模型相关），覆盖语言切换、英文路由、简繁输出与内容保护。另用原项目的公开视频片段验证英文口型：模型加载与预热约 **3.17 秒**，7.7 秒片段的视觉编码与三个候选解码合计约 **1.95 秒**，不包含视频预处理和文字整理。自动测试与单个样例不能代替真实麦克风、摄像头、全局快捷键、跨应用输入和准确率验证。
 
-The release source passed **1,041 tests, with 24 skipped** for platform-specific or optional hardware/model checks. The earlier startup repair passed 214 headless regression tests, with manual checks for normal shutdown, shutdown during initialization and reopening. Automated tests do not replace real microphone, camera, global-hotkey and cross-app insertion checks.
+The release source passed **1,136 tests, with 24 skipped** for platform-specific or optional hardware/model checks, covering language switching, English routing, Chinese script output and content guards. An offline check using the original project's public sample took about **3.17 seconds** to load and warm the English model and **1.95 seconds** to encode a 7.7-second clip and decode three candidates, excluding video preprocessing and wording cleanup. Automated tests and one sample do not replace real microphone, camera, global-hotkey, cross-app insertion or accuracy checks.
 
 ## 许可 / License
 

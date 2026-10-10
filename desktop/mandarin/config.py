@@ -19,6 +19,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 CACHE = _path('LIPCN_CACHE_DIR', Path.home() / '.cache' / 'lipcn')
 MODELS = _path('LIPCN_MANDARIN_MODELS', CACHE / 'models' / 'mandarin')
+ENGLISH_MODELS = _path('LIPCN_ENGLISH_MODELS', CACHE / 'models' / 'english')
 ASR_MODEL = _path('LIPCN_ASR_MODEL', MODELS / 'faster-whisper-large-v3-turbo')
 FORMATTER_MODEL = _path('LIPCN_FORMATTER_MODEL', MODELS / 'Qwen3-1.7B-4bit')
 CHECKPOINT = _path('LIPCN_CNVSRC_CHECKPOINT', MODELS / 'model_avg_cncvs_2_3_cnvsrc.pth')

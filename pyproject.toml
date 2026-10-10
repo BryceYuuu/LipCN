@@ -1,6 +1,6 @@
 [project]
 name = "lipcn"
-version = "2.1.1"
+version = "2.2.0"
 description = "LipCN: local Mandarin speech and lip input, with a retained cross-platform Lipflow core"
 requires-python = ">=3.11,<3.13"
 dependencies = [
@@ -11,6 +11,7 @@ dependencies = [
     "mlx-lm>=0.31.3; sys_platform == 'darwin'",  # local cleanup model (Apple Silicon)
     "numpy<2",
     "opencv-contrib-python>=4.9,<4.11",
+    "opencc-python-reimplemented==0.1.7",  # local Simplified/Traditional output conversion
     "pillow>=10; sys_platform == 'win32' or sys_platform == 'linux'",  # tray icon and overlay video
     "pynput>=1.7.7",
     "pystray>=0.19; sys_platform == 'win32' or sys_platform == 'linux'",

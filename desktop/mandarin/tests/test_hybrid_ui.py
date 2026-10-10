@@ -13,6 +13,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from languages import DEFAULT_LANGUAGE, LANGUAGE_CHOICES, recognition_language
 
 SOURCE = Path(__file__).resolve().parents[1] / 'live_test.py'
 
@@ -23,6 +24,13 @@ class Widget:
         self.text = ''
         self.images = []
         self.calls = []
+        self.selected_index = 0
+
+    def indexOfSelectedItem(self):
+        return self.selected_index
+
+    def selectItemAtIndex_(self, index):
+        self.selected_index = index
 
     def setEnabled_(self, value):
         self.enabled = bool(value)
@@ -163,6 +171,8 @@ class Harness:
                 requestAccessForMediaType_completionHandler_=request_permission))
         monkeypatch.setitem(sys.modules, 'AVFoundation', av)
         self.globals = {
+            'DEFAULT_LANGUAGE': DEFAULT_LANGUAGE, 'LANGUAGE_CHOICES': LANGUAGE_CHOICES,
+            'recognition_language': recognition_language,
             '__name__': 'headless_hybrid_ui', 'MAX_SECONDS': 20.0, 'TAIL_SECONDS': .4,
             'time': SimpleNamespace(monotonic=lambda: self.now),
             'AppHelper': SimpleNamespace(
@@ -187,6 +197,8 @@ class Harness:
         self.ui = self.globals['HeadlessUI']()
         ui = self.ui
         defaults = dict(
+            language=DEFAULT_LANGUAGE, reader_language='zh', language_switching=False,
+            language_popup=Widget(), language_worker=None,
             reader=object(), camera=None, closed=False, suspended=False, loading=False,
             processing=False, recording=False, pending_stop=None, pending_begin=False,
             camera_permission_pending=False,

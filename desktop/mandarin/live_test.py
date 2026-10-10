@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local Mandarin speech-first dictation with visual fallback and reviewed wording.
+"""Local Mandarin dictation and English lip reading with reviewed wording.
 
 Microphone/camera clips and recognized text stay in memory. No focused-field context,
 network inference, automatic paste, transcript history, or personal training.
@@ -12,7 +12,7 @@ import os
 import sys
 import time
 
-from config import ADAPTER, CHECKPOINT, FORMATTER_MODEL, PROFILE, ROOT, SOURCE, STATE
+from config import ADAPTER, CHECKPOINT, ENGLISH_MODELS, FORMATTER_MODEL, PROFILE, ROOT, SOURCE, STATE
 
 # The retained lipflow Python package reads this legacy variable on import.
 # Keep this product's profile separate even when launched directly with Python.
@@ -29,7 +29,7 @@ import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSButton, NSColor, NSFont, NSImageScaleProportionallyUpOrDown, NSImageView,
-    NSMakeRect, NSMenu, NSMenuItem, NSScrollView, NSTextField, NSTextView,
+    NSMakeRect, NSMenu, NSMenuItem, NSPopUpButton, NSScrollView, NSTextField, NSTextView,
     NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSWindowStyleMaskTitled,
 )
@@ -43,6 +43,8 @@ from hybrid_audio import AudioCapture, LocalASR
 from hybrid_candidates import CandidateFormatter
 from hybrid_hotkey import CommandToggle
 from hybrid_output import OutputTarget
+from english_lips import load_english_reader
+from languages import DEFAULT_LANGUAGE, LANGUAGE_CHOICES, recognition_language
 
 try:
     STATE.mkdir(parents=True, exist_ok=True)
@@ -68,6 +70,10 @@ class LiveTest(NSObject):
         if self is None:
             return None
         self.reader = None
+        self.reader_language = 'zh'
+        self.language = DEFAULT_LANGUAGE
+        self.language_switching = False
+        self.language_worker = None
         self.camera = None
         self.closed = False
         self.suspended = False
@@ -131,6 +137,15 @@ class LiveTest(NSObject):
         self.window.setDelegate_(self)
         root = self.window.contentView()
         label(root, 'LipCN', (26, 752, 650, 30), 25)
+        label(root, '语言', (670, 752, 50, 25), 15)
+        self.language_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
+            NSMakeRect(725, 747, 249, 32), False)
+        self.language_popup.addItemsWithTitles_([title for _, title in LANGUAGE_CHOICES])
+        self.language_popup.selectItemAtIndex_(0)
+        self.language_popup.setTarget_(self)
+        self.language_popup.setAction_('changeLanguage:')
+        self.language_popup.setEnabled_(False)
+        root.addSubview_(self.language_popup)
         self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(26, 345, 640, 360))
         self.video.setImageScaling_(NSImageScaleProportionallyUpOrDown)
         root.addSubview_(self.video)
@@ -222,11 +237,117 @@ class LiveTest(NSObject):
     @objc.python_method
     def _refresh_access(self):
         notes = []
-        if not self.microphone_allowed:
+        if getattr(self, 'language', DEFAULT_LANGUAGE) != 'en' and not self.microphone_allowed:
             notes.append('麦克风未启用')
         if self.hotkey is None or not getattr(self.hotkey, 'is_listening', False):
             notes.append('右 Command 未启用')
         self.access_label.setStringValue_(' · '.join(notes))
+
+    @objc.python_method
+    def _refresh_language_control(self):
+        popup = getattr(self, 'language_popup', None)
+        if popup is not None:
+            popup.setEnabled_(not (self.closed or self.loading or self.pending_begin or
+                                  self.recording or self.processing or self.language_switching))
+
+    def changeLanguage_(self, sender):
+        index = int(self.language_popup.indexOfSelectedItem())
+        previous = self.language
+        if (self.closed or self.loading or self.pending_begin or self.recording or
+                self.processing or self.language_switching or not 0 <= index < len(LANGUAGE_CHOICES)):
+            self.language_popup.selectItemAtIndex_(
+                next(i for i, (code, _) in enumerate(LANGUAGE_CHOICES) if code == previous))
+            return
+        language = LANGUAGE_CHOICES[index][0]
+        if language == previous:
+            return
+        self.language = language
+        self.token += 1
+        self.error = None
+        self.result_variants = []
+        self.result.setString_('')
+        self.last_route = None
+        for button in self.choice_buttons:
+            button.setEnabled_(False)
+        self._refresh_access()
+        model_language = recognition_language(language)
+        if model_language != self.reader_language or not self.lip_ready:
+            self.language_switching = True
+            self.loading = True
+            self.lip_ready = False
+            self.startup_stage = '加载英文口型模型' if model_language == 'en' else '加载中文口型模型'
+            self.startup_started = time.monotonic()
+            self.startup_stage_started = self.startup_started
+            self.start_button.setEnabled_(False)
+            try:
+                self.language_worker = self.model_executor.submit(
+                    self._load_language_model, model_language, self.token)
+            except (AttributeError, RuntimeError):
+                self._language_model_finished(self.token, model_language, None, 0.0,
+                                              '识别组件未就绪，请重新打开。')
+        self._refresh_language_control()
+        self._status('language_changed')
+
+    @objc.python_method
+    def _load_language_model(self, model_language, token):
+        """Replace the active visual model on the same worker used for inference."""
+        started = time.monotonic()
+        digest, error = None, None
+        try:
+            if self.closed:
+                return
+            import gc
+            import torch
+            if self.reader is not None and getattr(self.reader.enc_device, 'type', '') == 'mps':
+                torch.mps.synchronize()
+            self.reader = None
+            gc.collect()
+            if torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+            if self.closed:
+                return
+            if model_language == 'en':
+                reader = load_english_reader(ENGLISH_MODELS)
+            else:
+                from evaluate_cnvsrc import _reader, _load_adapter
+                reader = _reader(CHECKPOINT, SOURCE, 40, .1, 'mps')
+                metadata = _load_adapter(reader, ADAPTER)
+                digest = metadata['file_sha256']
+                reader.encode(np.zeros((25, 96, 96), dtype=np.uint8))
+            self.reader = reader
+            self.reader_language = model_language
+            if reader.enc_device.type == 'mps':
+                torch.mps.empty_cache()
+        except Exception as exc:
+            # Paths and model errors may contain private data; show a fixed message.
+            error = ('英文口型模型未能加载，请检查英文模型是否已安装。' if model_language == 'en'
+                     else '中文口型模型未能加载，请重新打开后重试。')
+            self.lip_load_error = type(exc).__name__
+        finally:
+            AppHelper.callAfter(self._language_model_finished, token, model_language,
+                                digest, time.monotonic() - started, error)
+
+    @objc.python_method
+    def _language_model_finished(self, token, model_language, digest, seconds, error):
+        if self.closed:
+            return
+        # Cancelling or hiding does not cancel a model load. Readiness still needs
+        # to settle, but a late load must not overwrite a newer result or error.
+        self.language_switching = False
+        self.loading = False
+        self.lip_ready = self.reader is not None and self.reader_language == model_language and error is None
+        self.adapter_sha256 = digest
+        self.warmup_seconds['lips'] = seconds
+        self.startup_stage = '就绪'
+        self.model_failed = (not self.lip_ready if model_language == 'en'
+                             else not (self.speech_ready or self.lip_ready))
+        if token == self.token:
+            self.error = error
+            if error:
+                self.result.setString_(error)
+        self.start_button.setEnabled_(self._can_begin())
+        self._refresh_language_control()
+        self._status('language_ready' if self.lip_ready else 'language_unavailable')
 
     @objc.python_method
     def _hotkey_error(self, message):
@@ -486,7 +607,12 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _can_begin(self):
-        if hasattr(self, 'speech_ready') or hasattr(self, 'lip_ready'):
+        if getattr(self, 'language_switching', False):
+            return False
+        if getattr(self, 'language', DEFAULT_LANGUAGE) == 'en':
+            available = (getattr(self, 'lip_ready', False) and
+                         getattr(self, 'reader_language', 'zh') == 'en')
+        elif hasattr(self, 'speech_ready') or hasattr(self, 'lip_ready'):
             available = ((getattr(self, 'speech_ready', False) and
                           getattr(self, 'microphone_allowed', False)) or
                          getattr(self, 'lip_ready', False))
@@ -499,6 +625,7 @@ class LiveTest(NSObject):
     def tick_(self, timer):
         if self.closed:
             return
+        self._refresh_language_control()
         self.start_button.setEnabled_(self._can_begin())
         self.stop_button.setEnabled_(self.recording and self.pending_stop is None)
         self.cancel_button.setEnabled_(self.recording or self.processing or self.pending_begin)
@@ -546,6 +673,7 @@ class LiveTest(NSObject):
         self.pending_stop = None
         self.error = None
         self.pending_begin = True
+        self._refresh_language_control()
         self.camera_permission_pending = False
         if sender is not None:
             try:
@@ -571,7 +699,7 @@ class LiveTest(NSObject):
         self.record_started = time.monotonic()
         if self.camera is not None:
             self.camera.start_recording()
-        if self.microphone_allowed:
+        if self.microphone_allowed and getattr(self, 'language', DEFAULT_LANGUAGE) != 'en':
             if not self.audio.start():
                 self.microphone_note = '麦克风不可用，本句转为唇语'
                 self._refresh_access()
@@ -579,7 +707,10 @@ class LiveTest(NSObject):
             self._close_camera()
             self.recording = False
             self.cancel_button.setEnabled_(False)
-            self.result.setString_('摄像头和麦克风均不可用。请在系统设置 → 隐私与安全性中允许设备，再开始。')
+            self.result.setString_(
+                'English 模式需要可用的摄像头，请允许摄像头权限后重试。'
+                if getattr(self, 'language', DEFAULT_LANGUAGE) == 'en' else
+                '摄像头和麦克风均不可用。请在系统设置 → 隐私与安全性中允许设备，再开始。')
             self._status('capture_unavailable')
             return
         self.recording = True
@@ -645,7 +776,9 @@ class LiveTest(NSObject):
                 AppHelper.callAfter(self._discarded, token)
                 return
             stage_started = time.monotonic()
-            speech = self.asr.transcribe(audio)
+            language = getattr(self, 'language', DEFAULT_LANGUAGE)
+            # English is the upstream visual recognizer, never Chinese ASR or a translation.
+            speech = self.asr.transcribe(audio) if language != 'en' else None
             stage_seconds['speech'] = time.monotonic() - stage_started
             audio_duration = len(audio) / 16000.0
             del audio
@@ -658,9 +791,10 @@ class LiveTest(NSObject):
             metadata = {'fps': (count - 1) / duration if duration > 0 else 0.0,
                         'mouth_pixels': float(np.median(widths)) if widths else 0.0,
                         'face_ratio': rec.face_ratio if rec is not None else 0.0,
-                        'route': 'speech' if speech.accepted else 'lips',
-                        'audio_reason': speech.reason}
-            if speech.accepted:
+                        'route': 'speech' if speech is not None and speech.accepted else 'lips',
+                        'audio_reason': speech.reason if speech is not None else 'english_visual_only',
+                        'language': language}
+            if speech is not None and speech.accepted:
                 texts = [speech.text]
                 del rec
             else:
@@ -670,9 +804,16 @@ class LiveTest(NSObject):
                                     "Can't see your face": '没有可靠语音，且多数画面未检测到脸，请正对镜头重试。',
                                     'No lip movement': '没有可靠语音，也未检测到足够嘴部动作，请重试。',
                                     'No camera': '没有可靠语音或可用口型，请检查麦克风、摄像头权限。'}
+                    if language == 'en':
+                        translations.update({
+                            "Can't see your face": '多数画面未检测到脸，请正对镜头重试。',
+                            'No lip movement': '未检测到足够嘴部动作，请重试。',
+                            'No camera': '没有可用口型，请检查摄像头权限。'})
                     raise ValueError(translations.get(problem[0], '画面质量不足，请重试。'))
                 if self.reader is None:
                     raise ValueError('没有可靠语音，且唇语模型尚不可用。')
+                if getattr(self, 'reader_language', 'zh') != recognition_language(language):
+                    raise ValueError('当前语言的口型模型尚未就绪，请稍后重试。')
                 stage_started = time.monotonic()
                 rois = rois_for(rec)
                 stage_seconds['mouth_crop'] = time.monotonic() - stage_started
@@ -682,15 +823,18 @@ class LiveTest(NSObject):
                     return
                 if rois is None or len(rois) < 12:
                     raise ValueError('本句缺少可用的嘴部画面，请重新录制。')
-                from evaluate_cnvsrc import configured_hypotheses
                 stage_started = time.monotonic()
                 encoded = self.reader.encode(rois)
                 stage_seconds['lip_encoder'] = time.monotonic() - stage_started
                 stage_started = time.monotonic()
-                hypotheses, _ = configured_hypotheses(
-                    self.reader, encoded, beam_size=40, ctc_weight=.1,
-                    nbest=3, reverse_weight=.3, reverse_scoring='batched',
-                    candidate_pool_size=10, pre_beam_ratio=1.5)
+                if language == 'en':
+                    hypotheses = self.reader.hypotheses(encoded, nbest=3)
+                else:
+                    from evaluate_cnvsrc import configured_hypotheses
+                    hypotheses, _ = configured_hypotheses(
+                        self.reader, encoded, beam_size=40, ctc_weight=.1,
+                        nbest=3, reverse_weight=.3, reverse_scoring='batched',
+                        candidate_pool_size=10, pre_beam_ratio=1.5)
                 stage_seconds['lip_decoder'] = time.monotonic() - stage_started
                 texts = [hypothesis.text for hypothesis in hypotheses]
                 del rois
@@ -700,7 +844,7 @@ class LiveTest(NSObject):
                 AppHelper.callAfter(self._discarded, token)
                 return
             stage_started = time.monotonic()
-            formatted = self.formatter.format(texts, source=metadata['route'])
+            formatted = self.formatter.format(texts, source=metadata['route'], language=language)
             stage_seconds['wording'] = time.monotonic() - stage_started
             metadata['stage_seconds'] = stage_seconds
             AppHelper.callAfter(self._inferred, token, formatted,
@@ -833,6 +977,7 @@ class LiveTest(NSObject):
     @objc.python_method
     def _workers_alive(self):
         for worker in (getattr(self, 'model_worker', None),
+                       getattr(self, 'language_worker', None),
                        getattr(self, 'inference_worker', None),
                        getattr(self, 'cleanup_future', None)):
             if worker is None:
@@ -935,7 +1080,8 @@ class LiveTest(NSObject):
         if hasattr(self, 'timer'):
             self.timer.invalidate()
         self._close_camera()
-        for future in (getattr(self, 'model_worker', None), getattr(self, 'inference_worker', None)):
+        for future in (getattr(self, 'model_worker', None), getattr(self, 'language_worker', None),
+                       getattr(self, 'inference_worker', None)):
             cancel = getattr(future, 'cancel', None)
             if callable(cancel):
                 cancel()
@@ -948,7 +1094,12 @@ class LiveTest(NSObject):
     def _status(self, state):
         self.last_status_write = time.monotonic()
         data = {'schema_version': 1, 'pid': os.getpid(), 'state': state,
-                'updated_at_unix': time.time(), 'model': 'CNVSRC Round8 research candidate',
+                'updated_at_unix': time.time(),
+                'language': getattr(self, 'language', DEFAULT_LANGUAGE),
+                'model': ('Auto-AVSR LRS3 English' if getattr(self, 'reader_language', 'zh') == 'en'
+                          else 'CNVSRC Round8 research candidate'),
+                'reader_language': getattr(self, 'reader_language', 'zh'),
+                'language_switching': getattr(self, 'language_switching', False),
                 'window_visible': bool(self.window.isVisible()), 'window_minimized': bool(self.window.isMiniaturized()), 'model_loaded': self.reader is not None, 'model_load_seconds': self.model_seconds,
                 'adapter_sha256': self.adapter_sha256, 'camera_open': bool(self.camera and self.camera.is_open),
                 'camera_frames_seen': self.frames, 'face_present': self.face_present,
@@ -968,8 +1119,10 @@ class LiveTest(NSObject):
                 'wording_model_loaded': getattr(self.formatter, '_model', None) is not None,
                 'speech_cpu_threads': getattr(self.asr, 'cpu_threads', None),
                 'speech_compute_type': getattr(self.asr, 'compute_type', None),
-                'beam_size': 40, 'ctc_weight': .1, 'reverse_weight': .3, 'candidate_pool_size': 10,
-                'build': '2026-10-06-fast2', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
+                'beam_size': 4 if getattr(self, 'reader_language', 'zh') == 'en' else 40,
+                'ctc_weight': .1,
+                'reverse_weight': None if getattr(self, 'reader_language', 'zh') == 'en' else .3,
+                'build': '2026-10-10-languages', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
                 'microphone_authorized': self.microphone_allowed, 'last_route': self.last_route,
                 'hotkey_listening': bool(self.hotkey and self.hotkey.is_listening),
                 'microphone_capturing': self.audio.capturing,

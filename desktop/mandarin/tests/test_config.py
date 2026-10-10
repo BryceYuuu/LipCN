@@ -9,6 +9,7 @@ CONFIG = Path(__file__).resolve().parents[1] / 'config.py'
 OVERRIDES = {
     'CACHE': 'LIPCN_CACHE_DIR',
     'MODELS': 'LIPCN_MANDARIN_MODELS',
+    'ENGLISH_MODELS': 'LIPCN_ENGLISH_MODELS',
     'ASR_MODEL': 'LIPCN_ASR_MODEL',
     'FORMATTER_MODEL': 'LIPCN_FORMATTER_MODEL',
     'CHECKPOINT': 'LIPCN_CNVSRC_CHECKPOINT',
@@ -33,6 +34,7 @@ def test_defaults_follow_checkout_and_home_without_creating_files(monkeypatch, t
     models = cache / 'models' / 'mandarin'
     assert config['ROOT'] == CONFIG.parents[2]
     assert config['CACHE'] == cache
+    assert config['ENGLISH_MODELS'] == cache / 'models' / 'english'
     assert config['ASR_MODEL'] == models / 'faster-whisper-large-v3-turbo'
     assert config['FORMATTER_MODEL'] == models / 'Qwen3-1.7B-4bit'
     assert config['CHECKPOINT'] == models / 'model_avg_cncvs_2_3_cnvsrc.pth'
@@ -49,6 +51,7 @@ def test_cache_and_model_root_overrides_cascade(monkeypatch, tmp_path):
     monkeypatch.setenv('LIPCN_MANDARIN_MODELS', str(models))
     config = runpy.run_path(str(CONFIG))
     assert config['ASR_MODEL'].parent == models
+    assert config['ENGLISH_MODELS'] == cache / 'models' / 'english'
     assert config['SOURCE'] == cache / 'CNVSRC2025'
     assert config['STATE'] == cache / 'runtime' / 'mandarin'
 
