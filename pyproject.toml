@@ -1,7 +1,7 @@
 [project]
 name = "lipcn"
 version = "2.2.0"
-description = "LipCN: local Mandarin speech and lip input, with a retained cross-platform Lipflow core"
+description = "LipCN: on-device speech and lip input with Simplified Chinese, Traditional Chinese, and English modes"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "anthropic>=0.40",

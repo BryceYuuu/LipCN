@@ -1,8 +1,8 @@
-# LipCN · 中文语音与唇语输入
+# LipCN · 本地语音与唇语输入
 
-**在本机把语音或口型转换成文字，再从三个表达方案中选择。** 由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护，专注中文输入体验。
+**支持简体中文、繁體中文和 English，默认简体中文。** 在本机把中文语音或中英文口型转换成文字，再从三个表达方案中选择。由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护。
 
-**Turn speech or lip movements into text on your Mac, then choose from three wording options.** Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu), with a focus on Mandarin input.
+**Supports Simplified Chinese, Traditional Chinese and English, with Simplified Chinese selected by default.** Turn Mandarin speech or Mandarin/English lip movements into text on your Mac, then choose from three wording options. Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu).
 
 LipCN 专注于中文输入，并集成原项目的英文口型识别。体验完整的原版英文应用，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
 
@@ -26,6 +26,12 @@ LipCN focuses on Mandarin input and also integrates the original English lip-rea
 These features describe **LipCN 2.2.0** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
 
 ## 界面 / Preview
+
+![LipCN 2.2.0 语言选择：简体中文、繁體中文、English / Language selector: Simplified Chinese, Traditional Chinese and English](docs/images/language-selector.png)
+
+*三种语言可选，默认简体中文；简繁共用中文识别，English 使用英文口型模型。*
+
+*Three language choices, with Simplified Chinese as the default. Both Chinese writing systems share the Mandarin recognizer; English uses the English visual model.*
 
 ![LipCN 中文口型测试界面：摄像头预览、嘴部跟踪和识别候选 / Mandarin lip-reading prototype with camera preview, mouth tracking and recognition candidates](docs/images/mandarin-demo.png)
 
