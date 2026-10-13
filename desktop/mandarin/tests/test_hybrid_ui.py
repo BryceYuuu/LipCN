@@ -58,6 +58,12 @@ class Widget:
     def setImage_(self, value):
         self.images.append(value)
 
+    def startAnimation_(self, sender):
+        self.animating = True
+
+    def stopAnimation_(self, sender):
+        self.animating = False
+
     def deminiaturize_(self, sender):
         self.calls.append('deminiaturize')
 
@@ -138,7 +144,7 @@ class FakeCamera:
         rec, self.recording = self.recording, None
         return rec
 
-    def close(self):
+    def close(self, *, wait=True):
         self.is_open = False
         self.close_count += 1
 
@@ -220,7 +226,7 @@ class Harness:
             last_status_write=0, completed=0, error=None, model_failed=False,
             microphone_allowed=True, microphone_note='语音优先已启用', hotkey_note='',
             result_variants=[], record_started=0, inference_started=0,
-            audio=FakeAudio(), window=Widget(), result=Widget(), state_label=Widget(),
+            audio=FakeAudio(), window=Widget(), result=Widget(), state_label=Widget(), progress=Widget(),
             start_button=Widget(), stop_button=Widget(), cancel_button=Widget(),
             access_label=Widget(), video=Widget(), mouth=Widget(), choice_buttons=[],
             hotkey=SimpleNamespace(stop=self.stop_hotkey),
@@ -347,7 +353,7 @@ def test_stale_auto_finish_does_not_stop_new_sentence(h):
     assert h.ui.recording and h.ui.pending_stop is None
 
 
-def test_tail_completion_closes_devices_and_queues_one_worker(h):
+def test_tail_completion_stops_recording_keeps_preview_and_queues_one_worker(h):
     h.begin_ready()
     rec = h.cameras[0].recording
     rec.ts = [rec.started + 1, rec.started + 19.9, rec.started + 20.2]
@@ -357,7 +363,9 @@ def test_tail_completion_closes_devices_and_queues_one_worker(h):
     _, finish, args = h.later[-1]
     finish(*args)
     finish(*args)
-    assert h.ui.camera is None and not h.ui.recording
+    assert h.ui.camera is h.cameras[0] and not h.ui.recording
+    assert h.ui.camera.is_open and h.ui.camera.recording is None
+    assert h.ui.camera.close_count == 0
     assert h.ui.audio.stops == 1 and h.ui.processing
     assert len(h.executor.tasks) == 1 and not h.threads
     assert h.executor.tasks[0]['target'] == h.ui._infer

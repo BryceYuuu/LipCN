@@ -29,7 +29,8 @@ import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
     NSButton, NSColor, NSFont, NSImageScaleProportionallyUpOrDown, NSImageView,
-    NSMakeRect, NSMenu, NSMenuItem, NSPopUpButton, NSScrollView, NSTextField, NSTextView,
+    NSMakeRect, NSMenu, NSMenuItem, NSPopUpButton, NSProgressIndicator,
+    NSProgressIndicatorStyleSpinning, NSScrollView, NSTextField, NSTextView,
     NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
     NSWindowStyleMaskTitled,
 )
@@ -105,6 +106,8 @@ class LiveTest(NSObject):
         self.last_frame_at = 0.0
         self.last_ui_frame = 0.0
         self.ui_frame_pending = False
+        self.ui_frame_token = None
+        self.closing_cameras = []
         self.last_status_write = 0.0
         self.completed = 0
         self.model_seconds = None
@@ -119,6 +122,7 @@ class LiveTest(NSObject):
         self.audio = AudioCapture()
         self.asr = LocalASR(compute_type='float32', cpu_threads=4)
         self.formatter = CandidateFormatter(model_path=FORMATTER_MODEL)
+        self.wording_mode = 'model' if os.environ.get('LIPCN_WORDING_MODE') == 'model' else 'fast'
         self.output_target = OutputTarget()
         self.microphone_allowed = False
         self.microphone_note = '麦克风权限待确认'
@@ -178,7 +182,12 @@ class LiveTest(NSObject):
         self.retry_button.setFrame_(NSMakeRect(836, 420, 136, 29))
         self.retry_button.setHidden_(True)
         root.addSubview_(self.retry_button)
-        self.state_label = label(root, '加载语音模型 · 0.0 秒', (26, 311, 945, 28), 17)
+        self.progress = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(26, 317, 18, 18))
+        self.progress.setStyle_(NSProgressIndicatorStyleSpinning)
+        self.progress.setIndeterminate_(True)
+        self.progress.setDisplayedWhenStopped_(False)
+        root.addSubview_(self.progress)
+        self.state_label = label(root, '加载语音模型 · 0.0 秒', (52, 311, 919, 28), 17)
         self.start_button = NSButton.buttonWithTitle_target_action_('开始说一句', self, 'begin:')
         self.start_button.setFrame_(NSMakeRect(26, 254, 240, 46))
         self.start_button.setFont_(NSFont.boldSystemFontOfSize_(19))
@@ -638,7 +647,10 @@ class LiveTest(NSObject):
             return
         self.face_present = False
         self.last_frame_at = 0
-        self.camera = Camera(os.environ.get('LIPCN_CAMERA', 'auto'), on_frame=self._camera_frame)
+        token = self.token
+        self.camera = Camera(os.environ.get('LIPCN_CAMERA', 'auto'), on_frame=
+                             lambda frame, observation, recording:
+                             self._camera_frame(frame, observation, recording, token))
         self.camera.track_always = True
         self.camera.ensure_open()
 
@@ -657,16 +669,26 @@ class LiveTest(NSObject):
     def _close_camera(self):
         camera, self.camera = self.camera, None
         self.face_present = False
+        self.ui_frame_pending = False
+        self.ui_frame_token = None
+        self.last_ui_frame = 0.0
+        self.video.setImage_(None)
+        self.mouth.setImage_(None)
         if camera is not None:
             camera.stop_recording()
-            camera.close()
-            tracker = getattr(camera, '_tracker', None)
-            if tracker is not None and not camera.is_open:
-                tracker.close()
+            camera.close(wait=False)
+            if camera.is_open:
+                self.closing_cameras = getattr(self, 'closing_cameras', []) + [camera]
 
     @objc.python_method
-    def _camera_frame(self, frame, observation, is_recording):
-        if self.closed or self.suspended:
+    def _cameras_closing(self):
+        self.closing_cameras = [camera for camera in getattr(self, 'closing_cameras', [])
+                                if camera.is_open]
+        return bool(self.closing_cameras)
+
+    @objc.python_method
+    def _camera_frame(self, frame, observation, is_recording, token):
+        if self.closed or self.suspended or self.camera is None or token != self.token:
             return
         now = time.monotonic()
         self.frames += 1
@@ -674,9 +696,10 @@ class LiveTest(NSObject):
         self.face_present = observation is not None
         if observation is None:
             self.capture_guidance = '请正对镜头，让嘴部完整入镜'
-        if self.ui_frame_pending or now - self.last_ui_frame < .10:
+        if self.ui_frame_pending or now - self.last_ui_frame < 1 / 24:
             return
         self.ui_frame_pending = True
+        self.ui_frame_token = token
         self.last_ui_frame = now
         try:
             if observation is not None:
@@ -697,19 +720,24 @@ class LiveTest(NSObject):
                 self.capture_guidance = ' · '.join(advice) or f'嘴部宽度 {mouth_pixels:.0f} px'
             preview = cv2.flip(cv2.resize(frame, (640, 360), interpolation=cv2.INTER_AREA), 1)
             mouth = mouth_view(frame, observation, 288, 180)
-            AppHelper.callAfter(self._draw_frame, preview, mouth)
+            AppHelper.callAfter(self._draw_frame, preview, mouth, token)
         except Exception:
-            self.ui_frame_pending = False
+            if self.ui_frame_token == token:
+                self.ui_frame_pending = False
+                self.ui_frame_token = None
             raise
 
     @objc.python_method
-    def _draw_frame(self, preview, mouth):
+    def _draw_frame(self, preview, mouth, token):
         try:
-            if not self.closed and not self.suspended:
+            if (not self.closed and not self.suspended and self.camera is not None
+                    and token == self.token):
                 self.video.setImage_(_nsimage(preview))
                 self.mouth.setImage_(_nsimage(mouth))
         finally:
-            self.ui_frame_pending = False
+            if getattr(self, 'ui_frame_token', token) == token:
+                self.ui_frame_pending = False
+                self.ui_frame_token = None
 
     @objc.python_method
     def _load_model(self):
@@ -811,7 +839,7 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _can_begin(self):
-        if getattr(self, 'language_switching', False):
+        if getattr(self, 'language_switching', False) or self._cameras_closing():
             return False
         if not self._uses_speech():
             available = (getattr(self, 'lip_ready', False) and
@@ -830,6 +858,10 @@ class LiveTest(NSObject):
     def tick_(self, timer):
         if self.closed:
             return
+        if not self.suspended and (self.processing or self.pending_begin or self.loading):
+            self.progress.startAnimation_(None)
+        else:
+            self.progress.stopAnimation_(None)
         self._refresh_language_control()
         self.start_button.setEnabled_(self._can_begin())
         self.stop_button.setEnabled_(self.recording and self.pending_stop is None)
@@ -850,7 +882,10 @@ class LiveTest(NSObject):
             if seconds >= MAX_SECONDS - TAIL_SECONDS and self.pending_stop is None:
                 self.finish_(None)
         elif self.processing:
-            label = '方案一已可使用 · 正在补充' if self.result_variants else '识别中'
+            label = ('方案一已可使用 · 正在补充' if self.result_variants else
+                     getattr(self, 'inference_stage', '识别中'))
+            if self.camera is not None and self.camera.is_open:
+                label += ' · 实时预览'
             self.state_label.setStringValue_(f'{label} · {time.monotonic() - self.inference_started:.1f} 秒')
             state = 'processing'
         elif self.loading:
@@ -958,10 +993,13 @@ class LiveTest(NSObject):
             return
         self.pending_stop = None
         rec = self.camera.stop_recording() if self.camera is not None else None
+        if self.camera is not None:
+            self.camera.preview_tracking_interval = 1 / 12
         audio = self.audio.stop()
         self.recording = False
         self.stop_button.setEnabled_(False)
-        self._close_camera()
+        # End the utterance, not the preview. No further frames/audio enter this
+        # recording; the visible camera stays live until completion or cancellation.
         # A busy UI may deliver its timer late. Keep inference input within the cap.
         if rec is not None:
             count = sum(timestamp <= rec.started + MAX_SECONDS for timestamp in rec.ts)
@@ -970,6 +1008,7 @@ class LiveTest(NSObject):
         self.processing = True
         self.processing_token = token
         self.inference_started = time.monotonic()
+        self.inference_stage = '识别中'
         self.result.setString_('')
         try:
             self.inference_worker = self.model_executor.submit(self._infer, self.token, rec, audio)
@@ -977,6 +1016,11 @@ class LiveTest(NSObject):
             self._infer_error(self.token, '识别组件未就绪，请重新打开。')
             return
         self._status('processing')
+
+    @objc.python_method
+    def _inference_phase(self, token, stage):
+        if token == self.token and self.processing and not self.closed:
+            self.inference_stage = stage
 
     @objc.python_method
     def _infer(self, token, rec, audio):
@@ -988,6 +1032,8 @@ class LiveTest(NSObject):
                 return
             stage_started = time.monotonic()
             language = getattr(self, 'language', DEFAULT_LANGUAGE)
+            AppHelper.callAfter(self._inference_phase, token,
+                                '识别语音' if self._uses_speech() else '识别口型')
             # English is the upstream visual recognizer, never Chinese ASR or a translation.
             speech = self.asr.transcribe(audio) if self._uses_speech() else None
             stage_seconds['speech'] = time.monotonic() - stage_started
@@ -1021,7 +1067,11 @@ class LiveTest(NSObject):
                             'No lip movement': '未检测到足够嘴部动作，请重试。',
                             'No camera': '没有可用口型，请检查摄像头权限。'})
                     raise ValueError(translations.get(problem[0], '画面质量不足，请重试。'))
+                AppHelper.callAfter(self._inference_phase, token, '准备口型模型')
+                stage_started = time.monotonic()
                 self._ensure_visual(recognition_language(language))
+                stage_seconds['lip_load'] = time.monotonic() - stage_started
+                AppHelper.callAfter(self._inference_phase, token, '识别口型')
                 self.lip_ready = True
                 if getattr(self, 'reader_language', 'zh') != recognition_language(language):
                     raise ValueError('当前语言的口型模型尚未就绪，请稍后重试。')
@@ -1061,7 +1111,10 @@ class LiveTest(NSObject):
             if token != self.token or self.closed:
                 AppHelper.callAfter(self._discarded, token)
                 return
-            formatted = self.formatter.format(texts, source=metadata['route'], language=language)
+            AppHelper.callAfter(self._inference_phase, token, '整理方案')
+            format_result = (self.formatter.format if getattr(self, 'wording_mode', 'fast') == 'model'
+                             else self.formatter.format_fast)
+            formatted = format_result(texts, source=metadata['route'], language=language)
             self.wording_ready = getattr(self.formatter, '_model', None) is not None
             stage_seconds['wording'] = time.monotonic() - stage_started
             metadata['stage_seconds'] = stage_seconds
@@ -1077,6 +1130,8 @@ class LiveTest(NSObject):
     def _discarded(self, token):
         if token == getattr(self, 'processing_token', token):
             self.processing = False
+            if token == self.token:
+                self._close_camera()
 
     @objc.python_method
     def _choice_text(self, index):
@@ -1241,6 +1296,8 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _workers_alive(self):
+        if self._cameras_closing():
+            return True
         for worker in (getattr(self, 'model_worker', None),
                        getattr(self, 'language_worker', None),
                        getattr(self, 'inference_worker', None),
@@ -1381,6 +1438,7 @@ class LiveTest(NSObject):
                 'speech_ready': getattr(self, 'speech_ready', False),
                 'lip_ready': getattr(self, 'lip_ready', self.reader is not None),
                 'wording_ready': getattr(self, 'wording_ready', False),
+                'wording_mode': getattr(self, 'wording_mode', 'fast'),
                 'cleanup_errors': getattr(self, 'cleanup_errors', {}),
                 'speech_model_loaded': bool(getattr(self.asr, 'loaded', False)),
                 'wording_model_loaded': getattr(self.formatter, '_model', None) is not None,
@@ -1389,7 +1447,7 @@ class LiveTest(NSObject):
                 'beam_size': 4 if getattr(self, 'reader_language', 'zh') == 'en' else 40,
                 'ctc_weight': .1,
                 'reverse_weight': None if getattr(self, 'reader_language', 'zh') == 'en' else .3,
-                'build': '2026-10-13-six-improvements', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
+                'build': '2026-10-13-live-preview', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
                 'microphone_authorized': self.microphone_allowed, 'last_route': self.last_route,
                 'hotkey_listening': bool(self.hotkey and self.hotkey.is_listening),
                 'microphone_capturing': self.audio.capturing,

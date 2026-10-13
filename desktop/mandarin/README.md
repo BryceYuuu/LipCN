@@ -39,9 +39,9 @@ Startup does not download models. Read each source’s terms, then put the asset
 | 英文口型 / English visual model | `~/.cache/lipcn/models/english/vsr/` | [LRS3_V_WER19.1](https://huggingface.co/Amanvir/LRS3_V_WER19.1), revision `c0b413f56b164565865a63f00774ee55a9738cc5`; `model.json` 与 / and `model.pth` |
 | 英文解码语言模型 / English decoding language model | `~/.cache/lipcn/models/english/lm/` | [lm_en_subword](https://huggingface.co/Amanvir/lm_en_subword), revision `f4e39b6d0904b2a900c53a2fff0377796c797bdc`; `model.json` 与 / and `model.pth` |
 
-只准备语音模型也可以使用语音输入；缺少口型基座、词表或兼容适配参数时，口型回退不可用。缺少表达模型时会使用保守的基本整理，三个方案可能重复。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
+只准备语音模型也可以使用语音输入；缺少口型基座、词表或兼容适配参数时，口型回退不可用。默认快速文字整理不使用表达模型，三个方案可能重复；原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
 
-Speech input can work with just the ASR model. Lip fallback is unavailable without the visual checkpoint, vocabulary and compatible adapter. Without the wording model, conservative basic formatting remains available and options may repeat. See the [research tools and model notes](../../research/README.md) for the visual setup.
+Speech input can work with just the ASR model. Lip fallback is unavailable without the visual checkpoint, vocabulary and compatible adapter. Fast formatting is the default, does not load the wording model, and may repeat options. Enable the previous MLX cleanup with `LIPCN_WORDING_MODE=model`. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
 
 推荐统一检查和准备模型： / Use the unified checks and model setup:
 
@@ -86,6 +86,7 @@ Set these variables before launch to reuse existing model files:
 | `LIPCN_ENGLISH_MODELS` | 英文模型根目录，含 `vsr/` 与 `lm/`，默认 `<cache>/models/english` / English model root containing `vsr/` and `lm/` |
 | `LIPCN_ASR_MODEL` | 语音模型目录 / ASR model directory |
 | `LIPCN_FORMATTER_MODEL` | MLX 表达模型目录 / Wording model directory |
+| `LIPCN_WORDING_MODE` | 默认 `fast` 使用保守规则；`model` 启用较慢的本地 MLX 润色 / `fast` uses conservative rules (default); `model` opts into slower local MLX cleanup |
 | `LIPCN_CNVSRC_CHECKPOINT` | 口型基座文件 / Visual checkpoint file |
 | `LIPCN_CNVSRC_SOURCE` | CNVSRC2025 配置/词表来源目录 / Config and vocabulary source |
 | `LIPCN_LIP_ADAPTER` | 兼容的本地口型 adapter / Compatible local visual adapter |
@@ -111,6 +112,7 @@ Keep models, recordings, videos, runtime state, personal profiles and `.env` fil
 - 简繁切换无需重载模型。中英文切换先检查目标文件，加载失败时恢复原选择并尝试恢复原模型；可点击“重试加载”。加载、采集与识别时不可切换。 / Chinese script switches reuse one model. Visual language switches check target files first; failures restore the prior selection and attempt to restore its model. Retry is available; selection is disabled during loading, capture or inference.
 - 点击开始，或允许输入监控权限后按右 Command；再次按下结束，Esc 取消。 / Click Start, or use Right Command after allowing Input Monitoring; press again to finish, Esc to cancel.
 - 摄像头和麦克风仅在开始后采集；复制/输入必须由用户选择。 / Capture starts only on request; copying and insertion require an explicit choice.
+- 结束本句后停止录音和识别帧收集；摄像头仅作实时预览，直到结果完成。取消、隐藏、最小化或关闭会请求停止并清空画面。预览期间降低脸部跟踪频率，录制本句仍逐帧跟踪。 / Finish ends utterance audio and recognition-frame collection; the camera continues live preview until results complete. Cancel, hide, minimize or close requests shutdown and clears the images. Preview-only tracking is throttled; recording still tracks every frame.
 - 从终端启动时，macOS 权限可能显示为终端或 Python；按系统设置中的实际名称授权。 / When launched from a terminal, macOS may assign permissions to that terminal or Python; use the identity shown in System Settings.
 - 启动只准备当前方式需要的识别器，备用口型与表达模型按需加载，避免在第一句前排队。 / Startup prepares the selected recognizer; fallback visual and wording models load only on demand, avoiding optional initialization ahead of the first sentence.
 - 本版本不自动读取历史句子、不自动训练，也不自动把文字提交到其他应用。 / This entry does not automatically read sentence history, train on the user, or submit text in other apps.

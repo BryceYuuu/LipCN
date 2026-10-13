@@ -1,5 +1,6 @@
 """Capture-clock regressions, with no camera or microphone hardware access."""
 from types import SimpleNamespace
+import threading
 
 import numpy as np
 import pytest
@@ -122,6 +123,103 @@ def test_camera_recording_lifecycle_uses_monotonic_clock(monkeypatch):
     assert cam.stop_recording() is rec
     assert cam._last_used == 13.75
     assert clock.wall_calls == 0
+
+
+def test_preview_tracking_is_throttled_but_each_new_recorded_frame_is_detected(monkeypatch):
+    clock = SimulatedClock()
+    monkeypatch.setattr(camera, 'time', clock)
+    cap = FakeCapture(clock, playback=False)
+    cam = camera.Camera(index=0)
+    cam._file_fps = None
+    cam._thread = SimpleNamespace(is_alive=lambda: True)
+    cam.track_always = True
+    cam.preview_tracking_interval = 1 / 12
+    detected, delivered, recordings = [], [], []
+    closed = []
+
+    def detect(frame, timestamp):
+        detected.append(cap.read_count)
+        return SimpleNamespace(
+            detected_at=cap.read_count, anchors=np.zeros((4, 2)), mouth_open=.1,
+            outer_lips=np.array([[1., 1.], [4., 1.]]))
+
+    cam._tracker = SimpleNamespace(detect=detect, close=lambda: closed.append('tracker'))
+    monkeypatch.setattr(cam, '_open', lambda: cap)
+    monkeypatch.setattr(camera, 'face_crop', lambda gray, obs, rec: gray)
+    first = cam.start_recording()
+    recordings.append(first)
+
+    def received(frame, obs, recording_active):
+        delivered.append((cap.read_count, obs.detected_at, recording_active))
+        if cap.read_count == 6:
+            assert cam.stop_recording() is first
+        elif cap.read_count == 18:
+            recordings.append(cam.start_recording())
+        elif cap.read_count == 24:
+            assert cam.stop_recording() is recordings[1]
+        elif cap.read_count == 28:
+            cam._stop.set()
+
+    cam.on_frame = received
+    cam._run()
+    assert cam.error is None and cap.released
+    assert detected[:6] == list(range(1, 7))
+    assert [n for n in detected if 19 <= n <= 24] == list(range(19, 25))
+    preview_detections = [n for n in detected if 7 <= n <= 18]
+    assert 1 <= len(preview_detections) < 12
+    assert len(delivered) == 28  # Tracking skips do not drop live preview frames.
+    assert any(frame != tracked for frame, tracked, active in delivered if not active)
+    assert all(frame == tracked for frame, tracked, active in delivered if active)
+    assert len(first.ts) == len(first.grays) == len(first.anchors) == 4  # Warm-up removes two frames.
+    second = recordings[1]
+    assert len(second.ts) == len(second.grays) == len(second.anchors) == 6
+    assert len(first.mouth_open) == len(first.mouth_pixels) == 4
+    assert len(second.mouth_open) == len(second.mouth_pixels) == 6
+    assert cam.recording is None and cam._tracker is None and closed == ['tracker']
+
+
+def test_nonblocking_close_leaves_inflight_detection_to_release_its_own_resources(monkeypatch):
+    entered, release = threading.Event(), threading.Event()
+    ownership, joins = [], []
+
+    class BlockingTracker:
+        def detect(self, frame, timestamp):
+            entered.set()
+            if not release.wait(5):
+                raise AssertionError('test did not release simulated detection')
+            return None
+
+        def close(self):
+            ownership.append(('tracker', threading.get_ident()))
+
+    class Capture:
+        def read(self):
+            return True, np.zeros((8, 8, 3), np.uint8)
+
+        def release(self):
+            ownership.append(('capture', threading.get_ident()))
+
+    cam = camera.Camera(index=0)
+    cam.track_always = True
+    cam._file_fps = None
+    monkeypatch.setattr(cam, '_open', Capture)
+    monkeypatch.setattr(camera, 'FaceTracker', BlockingTracker)
+    cam.ensure_open()
+    join = cam._thread.join
+    try:
+        assert entered.wait(2)
+        worker_id = cam._thread.ident
+        monkeypatch.setattr(cam._thread, 'join', lambda *args, **kwargs: joins.append((args, kwargs)))
+        cam.close(wait=False)
+        assert not joins  # The UI request must not wait even for the old two-second timeout.
+        assert cam.is_open and cam._stop.is_set()
+        assert not ownership  # Never close the tracker while detect() is executing.
+    finally:
+        release.set()
+        join(timeout=2)
+    assert not cam.is_open and cam._cap is None and cam._tracker is None
+    assert sorted(ownership) == [('capture', worker_id), ('tracker', worker_id)]
+    assert not cam.ready.is_set()
 
 
 def test_idle_camera_closes_after_elapsed_time_even_if_wall_clock_steps(monkeypatch):

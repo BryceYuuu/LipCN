@@ -105,7 +105,11 @@ def _reader(checkpoint: Path, source_dir: Path, beam_size: int, ctc_weight: floa
             self.enc_device = pick_encoder_device(device)
             self.device = torch.device('cuda') if self.enc_device.type == 'cuda' else torch.device('cpu')
             self.model = BidirectionalModel()
-            state = torch.load(checkpoint, map_location='cpu', weights_only=True)
+            # The pinned checkpoint uses torch.save's ZIP format. Map its CPU
+            # storages instead of allocating a second full 1.1 GB tensor copy.
+            # The SHA256 check above and strict copy into owned model parameters
+            # remain unchanged; decoder/training tensors never alias this file.
+            state = torch.load(checkpoint, map_location='cpu', weights_only=True, mmap=True)
             self.model.load_state_dict(state, strict=True)
             self.tensor_count = len(state)
             self.tensor_values = sum(tensor.numel() for tensor in state.values())

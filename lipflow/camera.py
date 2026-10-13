@@ -95,6 +95,9 @@ class Camera:
         self.error: str | None = None
         self.ready = threading.Event()
         self.track_always = False  # onboarding shows the mouth preview even when not recording
+        # Preview tracking can be cheaper than capture. Recording always detects
+        # every frame so inference input and its timestamps remain unchanged.
+        self.preview_tracking_interval = 0.0
 
     # -- lifecycle -----------------------------------------------------------------
     def ensure_open(self):
@@ -106,9 +109,9 @@ class Camera:
         self._thread = threading.Thread(target=self._run, name="lipflow-camera", daemon=True)
         self._thread.start()
 
-    def close(self):
+    def close(self, *, wait: bool = True):
         self._stop.set()
-        if self._thread:
+        if wait and self._thread:
             self._thread.join(timeout=2)
 
     @property
@@ -177,6 +180,8 @@ class Camera:
             self.error = None
             t0 = time.monotonic()
             warm = n_read = 0
+            last_detection = float('-inf')
+            preview_obs = None
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
                 if self._file_fps:  # play the file back in real time
@@ -191,8 +196,12 @@ class Camera:
                     self.ready.set()
                 rec = self._rec
                 obs: FaceObs | None = None
-                if rec is not None or self.track_always:
+                if rec is not None or (self.track_always and
+                        now - last_detection >= self.preview_tracking_interval):
                     obs = self._tracker.detect(frame, int((now - t0) * 1000))
+                    last_detection, preview_obs = now, obs
+                elif self.track_always:
+                    obs = preview_obs
                 if rec is not None and warm >= 3:
                     with self._lock:
                         if self._rec is rec:
@@ -215,6 +224,14 @@ class Camera:
             cap, self._cap = self._cap, None
             if cap is not None:
                 cap.release()
+            tracker, self._tracker = self._tracker, None
+            if tracker is not None:
+                close = getattr(tracker, 'close', None)
+                if close is not None:
+                    try:
+                        close()
+                    except Exception:
+                        pass
             self.ready.clear()
 
 

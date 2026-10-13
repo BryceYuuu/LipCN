@@ -34,7 +34,7 @@ class Widget:
 
 @pytest.fixture
 def controller(tmp_path, monkeypatch):
-    wanted = {'_infer', '_inferred', '_infer_error', '_discarded', '_status', '_uses_speech',
+    wanted = {'_infer', '_inference_phase', '_inferred', '_infer_error', '_discarded', '_close_camera', '_status', '_uses_speech',
               '_first_inferred', '_present_variants', '_choice_text', '_refresh_choices'}
     parsed = ast.parse(SOURCE.read_text(encoding='utf-8'))
     cls = next(node for node in parsed.body if isinstance(node, ast.ClassDef) and node.name == 'LiveTest')
@@ -55,6 +55,7 @@ def controller(tmp_path, monkeypatch):
     obj.token = 3
     obj.closed = False
     obj.loading = False
+    obj.wording_mode = 'model'  # Existing tests also exercise the optional model path.
     obj.processing = True
     obj.processing_token = 3
     obj.result_variants = []
@@ -73,6 +74,8 @@ def controller(tmp_path, monkeypatch):
     obj.model_seconds = 1.0
     obj.adapter_sha256 = '0' * 64
     obj.camera = None
+    obj.video = SimpleNamespace(setImage_=Mock())
+    obj.mouth = SimpleNamespace(setImage_=Mock())
     obj.frames = 0
     obj.face_present = False
     obj.microphone_allowed = True

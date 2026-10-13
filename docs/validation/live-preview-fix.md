@@ -1,0 +1,13 @@
+# Live preview and recognition-wait fix
+
+The 2.3.0 desktop closed the camera before submitting recognition, leaving its last image onscreen. The current code keeps preview active during recognition, ends the utterance independently, clears the image on completion/cancellation, and prevents callbacks from an old session repopulating a new or hidden window. UI delivery is capped at 24 fps, with a single queued frame; preview-only landmark detection is capped at 12 fps. Recording frames and detector cadence are unchanged. These are limits, not guaranteed observed frame rates.
+
+Camera shutdown is requested without joining its worker on the main UI thread. The worker owns capture/tracker cleanup; a new recording waits until the previous camera has released, and application shutdown tracks that cleanup.
+
+The reported slow utterance's local numeric diagnostics showed first result at 7.973 s and full completion at 24.136 s: speech routing 0.042 s, mouth crop 0.038 s, encoder 0.294 s, decoder 1.128 s, wording 16.173 s. Approximately 6.47 s before the first result was outside those stages and corresponds to the first visual-model fallback load. No transcript or recording was read or published for this analysis. Visual loading now has its own timing and UI stage, rather than appearing as unexplained recognition time.
+
+Fast formatting is now the default: fixed, guarded punctuation/register/filler rules produce three editable choices without loading MLX. Options may repeat; it does not repair or improve recognition. `LIPCN_WORDING_MODE=model` retains the previous optional model cleanup. Short synthetic phrases measured approximately 4.165 ms (Simplified), 25.167 ms (Traditional, cold OpenCC initialization), and 0.214 ms (English) on their first call; warm medians across 101 calls were 0.139, 0.254 and 0.061 ms. These measurements exclude capture and recognition and are not an end-to-end latency promise.
+
+The pinned Mandarin checkpoint uses memory-mapped loading while retaining full SHA256 verification and strict copying into owned parameters. A serial old/new local check gave `torch.load` 0.531 → 0.030 s and load/adapter/warmup 5.758 → 2.365 s. Cache and first-use Metal compilation affect the totals, so the full difference cannot be attributed to mmap. All 850 state tensors and the fixed 25-frame encoder output matched byte-for-byte. Peak RSS did not improve in this pair (2.386 → 2.529 GB); no memory-reduction claim is made. Model weights, beam settings and recording preprocessing remain unchanged.
+
+For silent input, selecting Lip only prepares the visual model before recording. Speech first retains on-demand visual fallback and can still incur a cold load on its first silent utterance.

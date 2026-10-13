@@ -429,6 +429,61 @@ class CandidateFormatter:
         result = _initial_result(clean, source, english=language == 'en')
         return _present_result(result, language, started)
 
+    def format_fast(self, candidates: Sequence[str] | str, *, source: str = 'lips',
+                    protected_names: Sequence[str] = (),
+                    language: str = 'zh-Hans') -> CandidateResult:
+        """Return three conservative rule-based choices without any model work.
+
+        Option one is identical to ``initial``. Chinese alternatives use only
+        the existing small register/filler rules; English keeps case and words,
+        adds terminal punctuation, and may remove isolated um/uh fillers. Every
+        edit still passes its language's content guard. Alternatives may repeat;
+        this does not repair recognition or generate missing content. No model
+        lock, loader, generator, or model-path inspection is used by this path.
+        """
+        started = time.monotonic()
+        clean, names = _prepare_input(candidates, protected_names, language)
+        english = language == 'en'
+        initial = _initial_result(clean, source, english=english)
+        if not initial.variants:
+            return _present_result(replace(initial, backend='fast-rules'), language, started)
+        raw = initial.raw
+        variants = list(initial.variants)
+        warnings = list(initial.warnings)
+        labels = ('Natural', 'Concise') if english else ('自然表达', '简洁表达')
+        guard = guard_english_proposal if english else guard_proposal
+        # Mixed-language English and non-Chinese Mandarin selections are kept
+        # verbatim, just as in the model-backed path. Never translate a beam.
+        can_style = len(raw) <= _MAX_INPUT and (not _HAN.search(raw) if english else bool(_HAN.search(raw)))
+        for style, label in zip(('natural', 'concise'), labels):
+            candidate = initial.variants[0].text
+            if can_style:
+                if english:
+                    candidate = raw
+                    if style == 'concise':
+                        candidate = _EN_FILLER.sub('', raw).strip(' ,;\t\r\n')
+                        candidate = re.sub(r'([,;])\s*[,;]+', r'\1', candidate)
+                    if candidate[-1:].isalnum():
+                        candidate += '.'
+                else:
+                    candidate = style_fallback(raw, style)
+                reasons = guard(raw, candidate, names)
+                if reasons:
+                    candidate = initial.variants[0].text
+                    warnings.extend(reasons)
+            changed = (_english_tokens(candidate) != _english_tokens(raw) if english else
+                       _compact(candidate) != _compact(raw))
+            variants.append(Variant(label, candidate, changed,
+                                    'Conservative rule-based formatting' if english else '仅按保守规则整理'))
+        warnings.append('Fast formatting uses fixed rules; it does not correct recognition.' if english
+                        else '快速整理仅使用固定规则，不会纠正识别错误或补充原文内容。')
+        if len({variant.text for variant in variants}) < 3:
+            warnings.append('Faithful alternatives may be identical.' if english
+                            else '可保真的方案可能相同。')
+        result = replace(initial, variants=tuple(variants), warnings=tuple(dict.fromkeys(warnings)),
+                         backend='fast-rules')
+        return _present_result(result, language, started)
+
     def format(self, candidates: Sequence[str] | str, *, source: str = "lips",
                protected_names: Sequence[str] = (), language: str = "zh") -> CandidateResult:
         """Return display/copy text in the selected language; legacy ``zh`` is unchanged."""

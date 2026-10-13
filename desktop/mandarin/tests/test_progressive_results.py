@@ -111,6 +111,34 @@ def test_wording_failure_keeps_first_candidate_available(controller):
     assert ui.result_variants == ['原句。'] and not ui.processing
 
 
+def test_default_fast_pipeline_never_calls_slow_formatter(controller):
+    ui = controller
+    del ui.wording_mode  # The shipped default also applies to older controllers.
+    ui.asr.transcribe.return_value = SimpleNamespace(accepted=True, text='原句', reason='accepted')
+    ui.formatter.initial.return_value = result('原句。')
+    ui.formatter.format_fast = Mock(return_value=result('原句。', '二。', '三。'))
+    ui._infer(3, None, np.zeros(16000, np.float32))
+    ui.formatter.format.assert_not_called()
+    ui.formatter.format_fast.assert_called_once_with(['原句'], source='speech', language='zh-Hans')
+    assert ui.result_variants == ['原句。', '二。', '三。']
+    assert not ui.processing and ui.completed == 1
+
+
+def test_visual_load_time_is_reported_separately_from_decoding(controller):
+    ui = controller
+    ui._infer(3, recording(), np.zeros(16000, np.float32))
+    assert ui.last_stage_seconds['lip_load'] >= 0
+    assert ui.last_stage_seconds['lip_encoder'] >= 0
+    assert ui.last_stage_seconds['lip_decoder'] >= 0
+
+
+def test_old_inference_phase_cannot_replace_current_status(controller):
+    ui = controller
+    ui.inference_stage = '识别语音'
+    ui._inference_phase(2, '准备口型模型')
+    assert ui.inference_stage == '识别语音'
+
+
 def test_pure_lips_never_requests_microphone_or_starts_audio(h):
     ui = h.ui
     ui.input_mode = 'lip-only'
