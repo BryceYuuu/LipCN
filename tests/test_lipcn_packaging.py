@@ -2,6 +2,7 @@
 from pathlib import Path
 import shutil
 import stat
+import os
 import zipfile
 
 import pytest
@@ -21,7 +22,11 @@ def test_archive_keeps_bundle_tree_and_executable_modes(tmp_path):
     with zipfile.ZipFile(destination) as archive:
         assert archive.read('LipCN.app/Contents/MacOS/LipCN') == b'fixture executable'
         mode = archive.getinfo('LipCN.app/Contents/MacOS/LipCN').external_attr >> 16
-        assert stat.S_IMODE(mode) == 0o755
+        # Windows chmod does not implement POSIX execute bits. The ZIP must
+        # preserve the actual source mode; macOS/Linux must also retain +x.
+        assert stat.S_IMODE(mode) == stat.S_IMODE(executable.stat().st_mode)
+        if os.name != 'nt':
+            assert stat.S_IMODE(mode) == 0o755
         assert archive.getinfo('LipCN.app/Contents/Resources/empty/').is_dir()
         assert archive.testzip() is None
     assert not destination.with_name('release.zip.part').exists()
