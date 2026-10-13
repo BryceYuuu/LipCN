@@ -1,8 +1,8 @@
 # LipCN · 中文桌面运行说明 / Mandarin desktop setup
 
-本目录是当前桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，默认纯口型，提供会话内可选的中文语音优先、英文口型识别、简繁输出、三个表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
+本目录是当前桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，默认纯口型，提供会话内可选的中文语音优先、英文口型识别、简繁输出、最多三个不同口型候选及语音表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
 
-This is the current desktop entry. It uses components from `lipflow/` and `research/`, defaulting to Lip only with optional Mandarin Speech first for the current session, English lip reading, simplified/traditional output, three wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
+This is the current desktop entry. It uses components from `lipflow/` and `research/`, defaulting to Lip only with optional Mandarin Speech first for the current session, English lip reading, simplified/traditional output, up to three distinct lip-reading hypotheses and speech wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
 
 ## 1. 环境 / Environment
 
@@ -39,9 +39,9 @@ Startup does not download models. Read each source’s terms, then put the asset
 | 英文口型 / English visual model | `~/.cache/lipcn/models/english/vsr/` | [LRS3_V_WER19.1](https://huggingface.co/Amanvir/LRS3_V_WER19.1), revision `c0b413f56b164565865a63f00774ee55a9738cc5`; `model.json` 与 / and `model.pth` |
 | 英文解码语言模型 / English decoding language model | `~/.cache/lipcn/models/english/lm/` | [lm_en_subword](https://huggingface.co/Amanvir/lm_en_subword), revision `f4e39b6d0904b2a900c53a2fff0377796c797bdc`; `model.json` 与 / and `model.pth` |
 
-只准备语音模型时，启动后需手动切换“语音优先”使用语音输入；缺少口型基座、词表或兼容适配参数时，默认纯口型及口型回退不可用。默认快速文字整理不使用表达模型，三个方案可能重复；原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
+只准备语音模型时，启动后需手动切换“语音优先”使用语音输入；缺少口型基座、词表或兼容适配参数时，默认纯口型及口型回退不可用。口型结果从模型候选中保序去重，展示最多三条，不改写、不补重复项。语音结果默认快速文字整理，原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启，仅用于语音。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
 
-With only the ASR model prepared, switch to Speech first after launch to use speech input. The default Lip only mode and visual fallback are unavailable without the visual checkpoint, vocabulary and compatible adapter. Fast formatting is the default, does not load the wording model, and may repeat options. Enable the previous MLX cleanup with `LIPCN_WORDING_MODE=model`. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
+With only the ASR model prepared, switch to Speech first after launch to use speech input. The default Lip only mode and visual fallback are unavailable without the visual checkpoint, vocabulary and compatible adapter. Lip results show up to three distinct model hypotheses in rank order, without rewrites or duplicate padding. Accepted speech uses fast formatting by default; `LIPCN_WORDING_MODE=model` enables optional MLX cleanup for speech only. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
 
 推荐统一检查和准备模型： / Use the unified checks and model setup:
 
@@ -107,7 +107,8 @@ Keep models, recordings, videos, runtime state, personal profiles and `.env` fil
 
 - 右上角语言选择提供“简体中文”“繁體中文”“English”，每次启动默认简体中文。简繁共用中文识别，只转换最终结果字形；复制和输入保持所选字形。 / The top-right language selector offers Simplified Chinese, Traditional Chinese and English, defaulting to Simplified Chinese on each launch. Chinese modes share one recognizer; final output, copy and insertion use the selected writing system.
 - 每次启动默认“纯口型”，忽略旧的输入模式偏好；可在当前会话切换“语音优先”，重启后恢复纯口型。输入方式不写入配置。纯口型不请求麦克风权限，也不调用语音识别。 / Every launch starts in Lip only, ignoring old input-mode preferences. Speech first can be selected for the current session; restarting returns to Lip only. Input-mode choices are not persisted. Lip only never requests microphone permission or runs ASR.
-- 方案一先显示，其余方案随后补齐；可在文本框直接修改，复制和输入使用修改后的内容，后续生成不覆盖已编辑文本。 / Option 1 appears first. Edit available text directly; copy and insertion use your edits, which later generation preserves.
+- 方案一先显示，口型其余方案来自不同的模型候选；按最终输出字形忽略句读/多余空白重复，最多展示三条，不足时留空并禁用对应按钮。可直接编辑，复制/输入使用修改后的内容，后续候选不覆盖已编辑文本。 / Option 1 appears first; the other lip choices are different model hypotheses. Deduplication follows output-script conversion and ignores sentence punctuation and redundant spacing; up to three choices are shown, with unavailable slots empty and disabled. Direct edits are preserved and used for copying/insertion.
+- 不提供“100% 正确”阈值：现有解码分数没有经过正确率校准。即使候选一致，也不代表识别正确；不会用润色模型编造缺少的候选。 / No 100%-correct threshold is claimed: decoder scores are not calibrated correctness probabilities. Agreement does not prove correctness, and a wording model never invents missing lip candidates.
 - English 只使用摄像头和英文口型模型，不启动麦克风、不使用中文语音识别，也不翻译。 / English uses only the camera and English visual model, without microphone capture, Mandarin ASR or translation.
 - 简繁切换无需重载模型。中英文切换先检查目标文件，加载失败时恢复原选择并尝试恢复原模型；可点击“重试加载”。加载、采集与识别时不可切换。 / Chinese script switches reuse one model. Visual language switches check target files first; failures restore the prior selection and attempt to restore its model. Retry is available; selection is disabled during loading, capture or inference.
 - 点击开始，或允许输入监控权限后按右 Command；再次按下结束，Esc 取消。 / Click Start, or use Right Command after allowing Input Monitoring; press again to finish, Esc to cancel.

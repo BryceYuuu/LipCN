@@ -10,6 +10,7 @@ import copy
 import os
 import sys
 from concurrent.futures import Future
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -191,7 +192,7 @@ class Harness:
         self.globals = {
             'DEFAULT_LANGUAGE': DEFAULT_LANGUAGE, 'LANGUAGE_CHOICES': LANGUAGE_CHOICES,
             'recognition_language': recognition_language,
-            'INPUT_MODES': INPUT_MODES, 'os': os,
+            'INPUT_MODES': INPUT_MODES, 'os': os, 'replace': replace,
             'PROFILE': Path('/unused-test-profile'), 'save_input_mode': lambda *args: None,
             '__name__': 'headless_hybrid_ui', 'MAX_SECONDS': 20.0, 'TAIL_SECONDS': .4,
             'time': SimpleNamespace(monotonic=lambda: self.now),

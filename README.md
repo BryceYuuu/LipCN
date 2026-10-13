@@ -1,8 +1,8 @@
 # LipCN · 本地语音与唇语输入
 
-**支持简体中文、繁體中文和 English，默认简体中文。** 在本机把中文语音或中英文口型转换成文字，再从三个表达方案中选择。由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护。
+**支持简体中文、繁體中文和 English，默认简体中文。** 在本机把中文语音或中英文口型转换成文字，口型识别提供最多三个不同候选供选择。由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护。
 
-**Supports Simplified Chinese, Traditional Chinese and English, with Simplified Chinese selected by default.** Turn Mandarin speech or Mandarin/English lip movements into text on your Mac, then choose from three wording options. Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu).
+**Supports Simplified Chinese, Traditional Chinese and English, with Simplified Chinese selected by default.** Turn Mandarin speech or Mandarin/English lip movements into text on your Mac, then choose from up to three distinct lip-reading hypotheses. Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu).
 
 LipCN 专注于中文输入，并集成原项目的英文口型识别。体验完整的原版英文应用，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
 
@@ -14,16 +14,17 @@ LipCN focuses on Mandarin input and also integrates the original English lip-rea
 | --- | --- |
 | **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output for display, copy and insertion; English uses the original visual model with camera-only capture. |
 | **两种输入方式**：每次启动默认纯口型，只用摄像头，不申请或打开麦克风；会话内可切换语音优先，使用本地 Whisper 并按需回退口型。 | **Two input modes:** every launch starts in Lip only, using the camera without requesting or opening the microphone. Switch to Speech first for the current session to use local Whisper with visual fallback on demand. |
-| **先出结果、直接修改**：方案一先显示并开放复制/输入，再补充方案二、三；三个文本框可编辑，后续生成保留你的修改。 | **Early, editable results:** Option 1 is usable before Options 2 and 3 finish. Edit any available option before copying or inserting; later generation preserves your edits. |
-| **快速文字整理**：默认用保守规则补标点、整理有限口语词和填充词，检查数字、时间、否定等改动；无需等待大模型润色，允许方案重复。 | **Fast wording cleanup:** conservative rules handle punctuation, limited register changes and fillers, while checking numbers, time references and negation. No wording-model wait by default; options may repeat. |
+| **先出结果、直接修改**：方案一先显示并开放复制/输入，再补充方案二、三；可用方案可直接编辑，后续候选保留你的修改。 | **Early, editable results:** Option 1 is usable before Options 2 and 3 finish. Edit any available option before copying or inserting; later generation preserves your edits. |
+| **不同口型候选**：按模型排序展示最多三个不同识别结果，过滤仅句读、多余空格或字形不同的重复项；不把同一句改写成三个方案，不足三条时留空。 | **Distinct lip-reading hypotheses:** show up to three different model-ranked readings, deduplicating sentence punctuation, redundant spacing and script variants. No paraphrases of a single guess; unavailable choices stay empty. |
+| **语音文字整理**：语音识别仍提供保守的标点、自然表达和精简选项，默认不加载润色模型。 | **Speech wording cleanup:** accepted speech still offers conservative punctuation, natural and concise options without a wording model by default. |
 | **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
 | **持续实时预览**：应用启动即开启摄像头预览，识别完成或取消后继续显示；摄像头保持开启直到退出应用。单句录制最长 20 秒，画面不保存。 | **Continuous live preview:** the camera starts with the app and keeps previewing after recognition or cancellation. It remains open until the app exits. Each utterance is capped at 20 seconds; frames are not saved. |
 | **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
 | **按需加载与失败恢复**：先准备当前输入方式需要的识别器；其余模型按需加载。语言切换先检查文件，失败时恢复原选择，并可重试。 | **On-demand loading and recovery:** prepare the selected recognizer first; load other models only when needed. Language switches check assets before replacing a model and restore the previous selection on failure, with retry available. |
 
-上述功能对应当前 **LipCN 2.3.0**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
+上述功能对应当前 **LipCN 主分支源码**（基于 2.3.0，`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
 
-These features describe **LipCN 2.3.0** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
+These features describe the **current LipCN main-branch source**, based on 2.3.0 (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
 
 ## 界面 / Preview
 
@@ -64,7 +65,7 @@ The commands above prepare speech assets. If those are the only models installed
 
 1. 允许摄像头预览，选择语言与输入方式；每次启动默认简体中文、纯口型。语音优先仅对当前会话有效，重启恢复纯口型。 / Allow camera preview and choose a language and input mode. Every launch starts in Simplified Chinese and Lip only. Speech first lasts only for the current session; restarting returns to Lip only.
 2. 点击“开始说一句”，说话或自然默念，再点击“结束并识别”。 / Click Start, speak or silently mouth a sentence, then finish.
-3. 方案一出现即可修改、复制或输入；后续两个方案准备好后自动显示。 / Edit, copy or insert Option 1 as soon as it appears; the other options follow.
+3. 方案一出现即可修改、复制或输入；口型模式展示最多三条不同候选，缺少的选项留空且不可复制/输入。 / Edit, copy or insert Option 1 as soon as it appears. Lip reading shows up to three distinct hypotheses; missing choices remain empty with copy/insertion disabled.
 
 应用启动时即开启摄像头预览，只有主动开始才收集本句用于识别的画面；语音优先还会在此时录音。结束、识别完成或取消均保留预览；隐藏或最小化停止本句采集并丢弃待返回结果，但摄像头继续开启，退出应用才关闭。预览画面不送入识别、不保存。纯口型及 English 不打开麦克风。输入原应用需要辅助功能权限。简繁切换共用中文模型；English 识别英文口型，不做翻译。
 
@@ -84,11 +85,15 @@ Mandarin visual recognition requires a compatible research adapter, distributed 
 | [`tests/`](tests/), [`desktop/mandarin/tests/`](desktop/mandarin/tests/) | 核心及中文桌面回归测试 / Core and Mandarin desktop regression tests |
 | [旧版英文说明](README.legacy.md) · [旧版中文说明](README.legacy.zh-CN.md) | 原有跨平台入口与设置，其行为和隐私选项与当前中文窗口不同 / Legacy cross-platform entry points with their own behavior and privacy settings |
 
+口型候选是可能的识别结果，不代表已经确认正确；模型分数不是正确率，也不能用于宣称“100% 确定”。候选不足时不会编造其他句子。
+
+Lip hypotheses are possible readings, not confirmed answers. Decoder scores are not correctness probabilities or a claim of 100% certainty. Missing hypotheses are never invented.
+
 ## 性能与验证 / Performance and validation
 
-当前源码默认快速整理三个方案，不加载 MLX 表达模型；识别模型和解码参数保持不变。纯规则短句实测首调用约 **0.2–25 毫秒**（含首次简繁转换初始化），只代表文字整理。需要原有模型润色时，以 `LIPCN_WORDING_MODE=model lipcn` 启动。默认纯口型会在启动时准备视觉模型；会话内切换语音优先时，语音模型按需加载。详见[预览与等待时间修复记录](docs/validation/live-preview-fix.md)。
+当前口型方案直接来自识别模型候选，不加载 MLX 表达模型、不生成改写。中文复用已经重排的 10 条候选，英文读取已有 beam 的最多 4 条，去重后展示前三条；不增加编码或搜索次数。语音输入默认使用快速文字整理。纯规则短句实测首调用约 **0.2–25 毫秒**（含首次简繁转换初始化），只代表文字整理。语音结果需要原有模型润色时，以 `LIPCN_WORDING_MODE=model lipcn` 启动；口型候选不经润色模型。默认纯口型会在启动时准备视觉模型；会话内切换语音优先时，语音模型按需加载。详见[预览与等待时间修复记录](docs/validation/live-preview-fix.md)。
 
-The current source defaults to fast rule-based options without loading MLX. Recognition weights and decoding settings are unchanged. First-call formatting of short synthetic phrases took roughly **0.2–25 ms**, including script-conversion initialization; this excludes recognition. Opt into the previous model-backed cleanup with `LIPCN_WORDING_MODE=model lipcn`. The default Lip only mode prepares the visual recognizer at startup; switching to Speech first loads ASR on demand during that session.
+Lip-reading options now come directly from model hypotheses without MLX or paraphrasing. Mandarin reuses the existing 10-candidate reranked pool; English reads up to 4 results from its existing beam. The first three distinct texts are shown without an additional encoding or search pass. Accepted speech defaults to fast rule-based wording. First-call formatting of short synthetic phrases took roughly **0.2–25 ms**, including script-conversion initialization; this excludes recognition. Opt into model-backed cleanup for accepted speech with `LIPCN_WORDING_MODE=model lipcn`; lip hypotheses always bypass it. The default Lip only mode prepares the visual recognizer at startup; switching to Speech first loads ASR on demand during that session.
 
 此前 2.3.0 发布包将“识别完成后的第一条可用结果”和“后续文字整理”分开：第一条不加载表达模型。真实本机文字整理测试中，四条合成测试句的第一条准备耗时为 **0.02–15.14 毫秒**；全部三个方案为 **0.57–9.40 秒**（首条含表达模型冷加载）。这些数字只衡量文字整理，不含录制、语音/口型识别，不能作为整句端到端速度承诺。
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 import os
 import sys
 import time
@@ -1118,12 +1119,12 @@ class LiveTest(NSObject):
                 stage_seconds['lip_encoder'] = time.monotonic() - stage_started
                 stage_started = time.monotonic()
                 if language == 'en':
-                    hypotheses = self.reader.hypotheses(encoded, nbest=3)
+                    hypotheses = self.reader.hypotheses(encoded, nbest=4)
                 else:
                     from evaluate_cnvsrc import configured_hypotheses
                     hypotheses, _ = configured_hypotheses(
                         self.reader, encoded, beam_size=40, ctc_weight=.1,
-                        nbest=3, reverse_weight=.3, reverse_scoring='batched',
+                        nbest=10, reverse_weight=.3, reverse_scoring='batched',
                         candidate_pool_size=10, pre_beam_ratio=1.5)
                 stage_seconds['lip_decoder'] = time.monotonic() - stage_started
                 texts = [hypothesis.text for hypothesis in hypotheses]
@@ -1134,16 +1135,27 @@ class LiveTest(NSObject):
                 AppHelper.callAfter(self._discarded, token)
                 return
             stage_started = time.monotonic()
-            initial = self.formatter.initial(texts, source=metadata['route'], language=language)
+            if metadata['route'] == 'lips':
+                # These are competing recognition hypotheses, not three rewrites
+                # of the winning beam. Reuse the already-scored pool; no extra
+                # encoder, beam search or wording model is needed.
+                AppHelper.callAfter(self._inference_phase, token, '整理口型候选')
+                formatted = self.formatter.recognition_choices(texts, language=language)
+                if not formatted.variants:
+                    raise ValueError('没有识别出可用文字，请重新说或默念这一句。')
+                initial = replace(formatted, variants=formatted.variants[:1])
+            else:
+                initial = self.formatter.initial(texts, source=metadata['route'], language=language)
             AppHelper.callAfter(self._first_inferred, token, initial,
                                 time.monotonic() - getattr(self, 'inference_started', started), metadata)
             if token != self.token or self.closed:
                 AppHelper.callAfter(self._discarded, token)
                 return
-            AppHelper.callAfter(self._inference_phase, token, '整理方案')
-            format_result = (self.formatter.format if getattr(self, 'wording_mode', 'fast') == 'model'
-                             else self.formatter.format_fast)
-            formatted = format_result(texts, source=metadata['route'], language=language)
+            if metadata['route'] != 'lips':
+                AppHelper.callAfter(self._inference_phase, token, '整理方案')
+                format_result = (self.formatter.format if getattr(self, 'wording_mode', 'fast') == 'model'
+                                 else self.formatter.format_fast)
+                formatted = format_result(texts, source=metadata['route'], language=language)
             self.wording_ready = getattr(self.formatter, '_model', None) is not None
             stage_seconds['wording'] = time.monotonic() - stage_started
             metadata['stage_seconds'] = stage_seconds
@@ -1183,10 +1195,15 @@ class LiveTest(NSObject):
         if editors:
             self.result.show_choices()
             for index, text in enumerate(texts):
-                # Late wording must never overwrite the text the user is editing.
+                # Late candidates/wording must never overwrite the user's edits.
                 if index >= len(previous) or str(editors[index].string()) == previous[index]:
                     editors[index].setString_(text)
                 editors[index].setEditable_(True)
+            for editor in editors[len(texts):]:
+                # Missing hypotheses are empty, unavailable slots, never stale
+                # results or duplicate filler alternatives.
+                editor.setString_('')
+                editor.setEditable_(False)
         else:
             self.result.setString_('\n\n'.join(f'方案{"一二三"[i]}：{text}'
                                                for i, text in enumerate(texts)))
@@ -1477,7 +1494,7 @@ class LiveTest(NSObject):
                 'beam_size': 4 if getattr(self, 'reader_language', 'zh') == 'en' else 40,
                 'ctc_weight': .1,
                 'reverse_weight': None if getattr(self, 'reader_language', 'zh') == 'en' else .3,
-                'build': '2026-10-13-continuous-camera', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
+                'build': '2026-10-13-recognition-choices', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
                 'microphone_authorized': self.microphone_allowed, 'last_route': self.last_route,
                 'hotkey_listening': bool(self.hotkey and self.hotkey.is_listening),
                 'microphone_capturing': self.audio.capturing,

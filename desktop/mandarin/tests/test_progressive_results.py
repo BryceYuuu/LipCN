@@ -22,7 +22,7 @@ def editors(ui):
         ui.choice_buttons.append(button)
 
 
-def test_first_result_can_be_copied_and_edited_before_formatter_returns(h):
+def test_first_result_can_be_copied_and_edited_before_remaining_candidates_arrive(h):
     ui = h.ui
     editors(ui)
     ui.processing = True
@@ -36,9 +36,9 @@ def test_first_result_can_be_copied_and_edited_before_formatter_returns(h):
     ui.insertChoice_(ui.choice_buttons[0])
     ui.output_target.copy.assert_called_once_with('我修正的句子。')
     ui.output_target.insert.assert_called_once_with('我修正的句子。')
-    ui._inferred(0, result('原句。', '自然表达。', '简洁表达。'), 3, 1, 25, {'route': 'lips'})
+    ui._inferred(0, result('原句。', '第二个口型候选。', '第三个口型候选。'), 3, 1, 25, {'route': 'lips'})
     assert ui.result_editors[0].string() == '我修正的句子。'
-    assert [e.string() for e in ui.result_editors[1:]] == ['自然表达。', '简洁表达。']
+    assert [e.string() for e in ui.result_editors[1:]] == ['第二个口型候选。', '第三个口型候选。']
     assert not ui.processing and all(b.enabled for b in ui.choice_buttons)
 
 
@@ -100,6 +100,7 @@ def test_production_pipeline_publishes_first_before_running_wording(controller):
     ui._infer(3, None, np.zeros(16000, np.float32))
     assert ui.result_variants == ['原句。', '二。', '三。']
     assert ui.completed == 1
+    ui.formatter.recognition_choices.assert_not_called()
 
 
 def test_wording_failure_keeps_first_candidate_available(controller):
@@ -120,6 +121,7 @@ def test_default_fast_pipeline_never_calls_slow_formatter(controller):
     ui._infer(3, None, np.zeros(16000, np.float32))
     ui.formatter.format.assert_not_called()
     ui.formatter.format_fast.assert_called_once_with(['原句'], source='speech', language='zh-Hans')
+    ui.formatter.recognition_choices.assert_not_called()
     assert ui.result_variants == ['原句。', '二。', '三。']
     assert not ui.processing and ui.completed == 1
 

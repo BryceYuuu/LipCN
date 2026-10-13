@@ -277,8 +277,10 @@ def test_english_inference_uses_english_beams_and_skips_chinese_asr_and_decoder(
     controller._infer(3, recording(), np.ones(16000, np.float32))
     controller.asr.transcribe.assert_not_called()
     controller.backend.configured_hypotheses.assert_not_called()
-    controller.reader.hypotheses.assert_called_once_with('encoded', nbest=3)
-    controller.formatter.format.assert_called_once_with(['HELLO ALICE'], source='lips', language='en')
+    controller.reader.hypotheses.assert_called_once_with('encoded', nbest=4)
+    controller.formatter.recognition_choices.assert_called_once_with(['HELLO ALICE'], language='en')
+    controller.formatter.format.assert_not_called()
+    controller.formatter.format_fast.assert_not_called()
     assert controller.completed == 1 and controller.last_route == 'lips'
 
 
@@ -286,7 +288,8 @@ def test_traditional_inference_uses_same_chinese_reader_and_formatter_with_outpu
     controller.language = 'zh-Hant'
     controller._infer(3, recording(), np.zeros(16000, np.float32))
     controller.backend.configured_hypotheses.assert_called_once()
-    controller.formatter.format.assert_called_once_with(['口型原始内容'], source='lips', language='zh-Hant')
+    controller.formatter.recognition_choices.assert_called_once_with(['口型原始内容'], language='zh-Hant')
+    controller.formatter.format.assert_not_called()
 
 
 def test_wrong_visual_model_is_never_used_for_selected_language(controller):
@@ -295,4 +298,5 @@ def test_wrong_visual_model_is_never_used_for_selected_language(controller):
     controller._infer(3, recording(), np.zeros(16000, np.float32))
     controller.reader.encode.assert_not_called()
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
     assert controller.completed == 0 and '当前语言' in controller.result.text

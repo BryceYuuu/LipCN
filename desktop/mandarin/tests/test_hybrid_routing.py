@@ -4,6 +4,7 @@ Methods are AST-extracted from live_test.py on every fixture creation, so these
 tests cover the production routing bodies and actual status serializer.
 """
 import ast
+from dataclasses import replace
 import json
 import os
 from pathlib import Path
@@ -15,6 +16,7 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from languages import DEFAULT_LANGUAGE, recognition_language
+from hybrid_candidates import CandidateResult, Variant
 
 SOURCE = Path(__file__).resolve().parents[1] / 'live_test.py'
 PRIVATE_TEXT = '这是只在内存中显示的私人测试句子'
@@ -42,7 +44,7 @@ def controller(tmp_path, monkeypatch):
     assert {method.name for method in methods} == wanted
     for method in methods:
         method.decorator_list = []
-    env = {'time': time, 'np': np, 'json': json, 'os': os,
+    env = {'time': time, 'np': np, 'json': json, 'os': os, 'replace': replace,
            'DEFAULT_LANGUAGE': DEFAULT_LANGUAGE, 'recognition_language': recognition_language,
            'STATUS': tmp_path / 'status.json', 'TAIL_SECONDS': 0.4, 'MAX_SECONDS': 20,
            'AppHelper': SimpleNamespace(callAfter=lambda fn, *args: fn(*args)),
@@ -85,9 +87,11 @@ def controller(tmp_path, monkeypatch):
     obj._can_begin = lambda: False
     obj.asr = SimpleNamespace(transcribe=Mock(return_value=SimpleNamespace(
         accepted=False, text='', reason='low_confidence')))
-    obj.formatter = SimpleNamespace(format=Mock(return_value=SimpleNamespace(
-        raw=PRIVATE_TEXT, variants=[SimpleNamespace(label='原意', text=PRIVATE_TEXT + '。', note='')], warnings=[])))
-    obj.formatter.initial = Mock(return_value=obj.formatter.format.return_value)
+    formatted = CandidateResult(PRIVATE_TEXT, (Variant('原意', PRIVATE_TEXT + '。'),),
+                                (), 'test', False, 0.0)
+    obj.formatter = SimpleNamespace(
+        format=Mock(return_value=formatted), format_fast=Mock(return_value=formatted),
+        initial=Mock(return_value=formatted), recognition_choices=Mock(return_value=formatted))
     backend = ModuleType('evaluate_cnvsrc')
     backend.configured_hypotheses = Mock(return_value=([SimpleNamespace(text='口型原始内容')], None))
     monkeypatch.setitem(sys.modules, 'evaluate_cnvsrc', backend)
@@ -112,6 +116,7 @@ def test_accepted_audio_skips_lip_quality_and_model_even_without_camera(controll
     controller.reader.encode.assert_not_called()
     controller.backend.configured_hypotheses.assert_not_called()
     controller.formatter.format.assert_called_once_with([PRIVATE_TEXT], source='speech', language='zh-Hans')
+    controller.formatter.recognition_choices.assert_not_called()
     assert controller.completed == 1 and controller.last_route == 'speech'
 
 
@@ -123,7 +128,10 @@ def test_rejected_or_empty_audio_falls_back_to_lips(controller, reason, audio):
     controller.env['clip_problem'].assert_called_once()
     controller.reader.encode.assert_called_once()
     controller.backend.configured_hypotheses.assert_called_once()
-    controller.formatter.format.assert_called_once_with(['口型原始内容'], source='lips', language='zh-Hans')
+    controller.formatter.recognition_choices.assert_called_once_with(['口型原始内容'], language='zh-Hans')
+    controller.formatter.initial.assert_not_called()
+    controller.formatter.format.assert_not_called()
+    controller.formatter.format_fast.assert_not_called()
     assert controller.completed == 1 and controller.last_route == 'lips'
 
 
@@ -133,6 +141,7 @@ def test_rejected_audio_and_bad_lips_fail_without_formatting(controller, rec, pr
     controller._infer(3, rec, np.empty(0, np.float32))
     controller.reader.encode.assert_not_called()
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
     assert controller.completed == 0 and controller.error
     assert '本句识别失败' in controller.result.text
     assert json.loads(controller.status_path.read_text(encoding='utf-8'))['state'] == 'inference_error'
@@ -144,6 +153,7 @@ def test_cancelled_before_start_skips_every_model(controller):
     controller.asr.transcribe.assert_not_called()
     controller.reader.encode.assert_not_called()
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
     assert not controller.status_path.exists()
 
 
@@ -155,6 +165,7 @@ def test_cancelled_during_asr_never_starts_vsr_or_formatter(controller):
     controller._infer(3, recording(), np.zeros(16000, np.float32))
     controller.reader.encode.assert_not_called()
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
     assert controller.completed == 0 and not controller.status_path.exists()
 
 
@@ -167,6 +178,7 @@ def test_cancelled_while_building_rois_never_starts_vsr_or_formatter(controller)
     controller.reader.encode.assert_not_called()
     controller.backend.configured_hypotheses.assert_not_called()
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
 
 
 def test_cancelled_after_vsr_does_not_format_or_publish(controller):
@@ -176,6 +188,7 @@ def test_cancelled_after_vsr_does_not_format_or_publish(controller):
     controller.backend.configured_hypotheses.side_effect = cancel
     controller._infer(3, recording(), np.zeros(16000, np.float32))
     controller.formatter.format.assert_not_called()
+    controller.formatter.recognition_choices.assert_not_called()
     assert controller.completed == 0 and not controller.status_path.exists()
 
 

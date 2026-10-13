@@ -1,6 +1,7 @@
-"""Offline presentation of one recognition, never three unrelated guesses.
+"""Offline presentation of true recognition candidates or one speech transcript.
 
 This module does not read focus/history, save transcripts, or contact a service.
+Lip-reading choices retain distinct model hypotheses in their original order.
 The optional MLX model proposes punctuation/wording; a deliberately conservative
 guard keeps unsupported proposals out of the displayed alternatives. It cannot
 recover missing visual evidence or certify that the original recognition is true.
@@ -72,6 +73,20 @@ _EN_NEG = re.compile(
 _EN_NUMBER = re.compile(r"\d+(?:[.,:/-]\d+)*")
 _EN_LITERAL = re.compile(
     r"https?://[^\s]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}|\b[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)+\b")
+
+# Separate Han characters let display spacing vary without concatenating Latin
+# words. Numeric separators, signs, identifiers and in-word apostrophes carry
+# meaning; only ordinary sentence punctuation is omitted from candidate keys.
+_CANDIDATE_TOKEN = re.compile(
+    r"[\u3400-\u9fff]|\d+(?:[.,:/-]\d+)*|"
+    r"[^\W\d_\u3400-\u9fff][^\W\u3400-\u9fff]*(?:['-][^\W\u3400-\u9fff]+)*|"
+    r"[^\s.,!?;:\"'“”‘’()\[\]{}…，。！？；：、「」『』]", re.UNICODE)
+
+
+def _recognition_key(text: str) -> tuple[str, ...]:
+    normalized = unicodedata.normalize('NFC', text).lower()
+    normalized = normalized.translate(str.maketrans({'’': "'", '‘': "'", 'ʼ': "'"}))
+    return tuple(match.group() for match in _CANDIDATE_TOKEN.finditer(normalized))
 
 
 def _english_names(raw: str, supplied: Sequence[str]) -> tuple[str, ...]:
@@ -428,6 +443,53 @@ class CandidateFormatter:
         clean, _ = _prepare_input(candidates, protected_names, language)
         result = _initial_result(clean, source, english=language == 'en')
         return _present_result(result, language, started)
+
+    def recognition_choices(self, candidates: Sequence[str] | str, *,
+                            language: str = 'zh-Hans') -> CandidateResult:
+        """Present up to three distinct hypotheses in the recognizer's order.
+
+        Each option comes from one actual candidate, with only Chinese script
+        conversion and conservative terminal punctuation. Deduplication happens
+        in the target script and ignores sentence punctuation, repeated spaces
+        and case, while retaining numeric notation and English word boundaries;
+        displayed English spelling, case and apostrophes remain untouched.
+        Missing alternatives are never invented or filled with duplicates.
+        Model rank is not an estimated probability of being correct. This pure
+        path never acquires the wording-model lock or loads/calls a model.
+        """
+        started = time.monotonic()
+        validate_language(language)
+        if isinstance(candidates, str):
+            candidates = [candidates]
+        variants, selected, seen = [], [], set()
+        raw = ''
+        for candidate in candidates:
+            if not isinstance(candidate, str) or not candidate.strip():
+                continue
+            candidate = candidate.strip()
+            if language == 'zh-Hans':
+                candidate = to_simplified(candidate)
+            elif language == 'zh-Hant':
+                candidate = to_traditional(candidate)
+            # The key is never displayed: punctuation/case normalization must
+            # not rewrite names, contractions, numbers or any hypothesis words.
+            key = _recognition_key(candidate)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            selected.append(candidate)
+            if not variants:
+                raw = candidate
+            text = candidate if language == 'en' else punctuate(candidate)
+            variants.append(Variant('方案' + '一二三'[len(variants)], text))
+            if len(variants) == 3:
+                break
+        low_consistency = candidates_disagree(selected)
+        warning = ('Recognition candidates may be incorrect; their order is not a correctness probability.'
+                   if language == 'en' else '口型候选可能有误；排序不代表正确概率，请核对原意。')
+        return CandidateResult(raw, tuple(variants), (warning,) if variants else (),
+                               'recognition-candidates', low_consistency,
+                               time.monotonic() - started)
 
     def format_fast(self, candidates: Sequence[str] | str, *, source: str = 'lips',
                     protected_names: Sequence[str] = (),

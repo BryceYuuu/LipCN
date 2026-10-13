@@ -1,5 +1,7 @@
 # Live preview and recognition-wait fix
 
+A subsequent [recognition-candidate update](recognition-choices.md) replaces lip-result wording with distinct decoder hypotheses. Fast/model wording below now applies only to accepted speech; lip candidates bypass it.
+
 Later on 2026-10-13, the user requested continuous camera preview and lip-only as the startup default. The current app now starts preview on launch and retains it after completion, cancellation, hiding or minimizing; only application shutdown closes the camera (device failure may require reconnection). Hidden windows stop rendering and cancel any active utterance. New launches always select Simplified Chinese and Lip only, regardless of an old saved speech-first preference. The lifecycle description below records the preceding fix, before this follow-up request.
 
 The 2.3.0 desktop closed the camera before submitting recognition, leaving its last image onscreen. The preceding fix kept preview active during recognition, ended the utterance independently, and cleared the image on completion/cancellation. The continuous-preview follow-up instead separates camera and utterance generations so that results, cancellation and language changes preserve the live view while stale callbacks from a replaced camera are rejected. UI delivery is capped at 24 fps, with a single queued frame; visible preview-only landmark detection is capped at 12 fps and hidden-window tracking at 1 fps. Recording frames and detector cadence are unchanged. These are limits, not guaranteed observed frame rates.
