@@ -865,7 +865,8 @@ class LiveTest(NSObject):
         self._refresh_language_control()
         self.start_button.setEnabled_(self._can_begin())
         self.stop_button.setEnabled_(self.recording and self.pending_stop is None)
-        self.cancel_button.setEnabled_(self.recording or self.processing or self.pending_begin)
+        active_processing = self.processing and getattr(self, 'processing_token', self.token) == self.token
+        self.cancel_button.setEnabled_(self.recording or active_processing or self.pending_begin)
         if self.suspended:
             state = 'paused'
         elif self.pending_begin:
@@ -882,7 +883,8 @@ class LiveTest(NSObject):
             if seconds >= MAX_SECONDS - TAIL_SECONDS and self.pending_stop is None:
                 self.finish_(None)
         elif self.processing:
-            label = ('方案一已可使用 · 正在补充' if self.result_variants else
+            label = ('正在取消' if not active_processing else
+                     '方案一已可使用 · 正在补充' if self.result_variants else
                      getattr(self, 'inference_stage', '识别中'))
             if self.camera is not None and self.camera.is_open:
                 label += ' · 实时预览'

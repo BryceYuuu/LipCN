@@ -148,6 +148,16 @@ def test_failed_worker_submission_releases_preview(h):
     assert not camera.is_open and h.ui.camera is None and not h.ui.processing
 
 
+def test_cancelled_worker_does_not_look_like_active_recognition(h):
+    finish_recording(h)
+    h.ui.cancel_(None)
+    h.ui.tick_(None)
+    assert h.ui.processing  # Native work is still draining in the background.
+    assert '正在取消' in h.ui.state_label.text
+    assert '实时预览' not in h.ui.state_label.text
+    assert not h.ui.cancel_button.enabled
+
+
 def test_inflight_preview_close_is_nonblocking_and_remains_visible_to_shutdown(h):
     preview = finish_recording(h)
     token = h.ui.token
