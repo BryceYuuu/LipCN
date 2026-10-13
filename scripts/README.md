@@ -16,7 +16,7 @@ temporary environment and compressed archive. From the repository root:
 uv python install 3.12.14
 UV_PROJECT_ENVIRONMENT="$HOME/.cache/lipcn/build-env" \
   uv sync --frozen --python 3.12.14 --extra desktop --no-editable --no-dev
-python3 scripts/build_lipcn.py \
+"$HOME/.cache/lipcn/build-env/bin/python" scripts/build_lipcn.py \
   --python "$HOME/.cache/lipcn/build-env/bin/python" \
   --output "$HOME/.cache/lipcn/dist-2.3.0"
 ```
@@ -60,7 +60,7 @@ Running `setup` without `--download` only inspects local state. Downloads use th
 fixed revisions, sizes and SHA256 hashes in `lipcn/assets_manifest.json`. An
 interrupted `.lipcn-part` download resumes when the server supports ranges; only
 verified complete bytes replace the final asset. Re-running setup recovers a
-failed transfer. See the source links reported by `doctor` before accepting
+failed transfer. See the source links reported by `doctor --json` before accepting
 research-model terms. The English LRS3 and Mandarin visual models have research
 restrictions; downloading does not grant a commercial model license.
 
