@@ -16,7 +16,8 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python import vision
 
 HERE = os.path.dirname(__file__)
-DEFAULT_MODEL = os.path.join(HERE, "..", "models", "face_landmarker.task")
+DEFAULT_MODEL = os.path.expanduser(os.environ.get(
+    "LIPCN_FACE_MODEL", os.path.join(HERE, "..", "models", "face_landmarker.task")))
 
 # Subject's right eye is on the image left in an unmirrored camera frame, matching
 # dlib points 36-41 of the reference face.

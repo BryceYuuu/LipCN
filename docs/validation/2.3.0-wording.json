@@ -1,0 +1,37 @@
+{
+  "scope": "Synthetic text formatting only; excludes recognition/capture; first row cold",
+  "rows": [
+    {
+      "language": "zh-Hans",
+      "characters": 12,
+      "first_option_seconds": 0.006255958000110695,
+      "all_options_seconds": 9.404521207998187,
+      "model_loaded": true,
+      "options": 3
+    },
+    {
+      "language": "zh-Hans",
+      "characters": 11,
+      "first_option_seconds": 5.8000001445179805e-05,
+      "all_options_seconds": 0.6062332500005141,
+      "model_loaded": true,
+      "options": 3
+    },
+    {
+      "language": "zh-Hant",
+      "characters": 10,
+      "first_option_seconds": 0.015138124999793945,
+      "all_options_seconds": 0.5689571669972793,
+      "model_loaded": true,
+      "options": 3
+    },
+    {
+      "language": "en",
+      "characters": 39,
+      "first_option_seconds": 1.966700074262917e-05,
+      "all_options_seconds": 0.6706595830000879,
+      "model_loaded": true,
+      "options": 3
+    }
+  ]
+}

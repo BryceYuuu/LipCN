@@ -1,0 +1,8 @@
+[
+  {"reference": "花园里的花开了", "entities": []},
+  {"reference": "这份申请暂时不要提交", "entities": []},
+  {"reference": "小陈星期五去参加面试", "entities": [{"kind": "person_name", "text": "小陈"}, {"kind": "number", "text": "五"}]},
+  {"reference": "请把温度调到二十六度", "entities": [{"kind": "number", "text": "二十六"}]},
+  {"reference": "整理完工具以后记得把门关上", "entities": []},
+  {"reference": "如果下周的行程发生变化请提前告诉接待人员以便重新安排房间", "entities": []}
+]

@@ -19,9 +19,12 @@ def h(monkeypatch):
     ui.warmup_seconds = {}
     ui.reader = SimpleNamespace(enc_device=SimpleNamespace(type='cpu'))
     ui.asr = SimpleNamespace()
+    ui._preflight_visual = lambda language: None
     harness.globals['ENGLISH_MODELS'] = 'local-english-models'
     monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(
-        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False))))
+        set_num_threads=lambda value: None,
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+        mps=SimpleNamespace(empty_cache=lambda: None, synchronize=lambda: None)))
     return harness
 
 
@@ -73,9 +76,15 @@ def test_language_cannot_change_during_capture_inference_or_model_load(h, busy):
 
 def test_english_load_is_queued_on_model_executor_and_releases_chinese_first(h):
     reader = SimpleNamespace(enc_device=SimpleNamespace(type='cpu'))
+    original = h.ui.reader
+    checked = []
+    def preflight(language):
+        assert h.ui.reader is original
+        checked.append(language)
+    h.ui._preflight_visual = preflight
     def load(path):
         assert path == 'local-english-models'
-        assert h.ui.reader is None
+        assert h.ui.reader is None and checked == ['en']
         return reader
     h.globals['load_english_reader'] = load
     choose(h, 'en')
@@ -105,18 +114,70 @@ def test_english_does_not_fall_back_to_chinese_speech_without_camera(h):
     assert 'English' in h.ui.result.text and '摄像头' in h.ui.result.text
 
 
-def test_failed_english_load_is_unavailable_and_does_not_expose_model_exception(h):
-    h.globals['load_english_reader'] = Mock(side_effect=RuntimeError('/private/model/path'))
+def test_missing_target_assets_keep_original_reader_and_roll_back_language(h):
+    original = h.ui.reader
+    h.ui._preflight_visual = Mock(side_effect=FileNotFoundError('/private/model/path'))
+    load = h.globals['load_english_reader'] = Mock()
     choose(h, 'en')
     finish_load(h)
-    assert h.ui.reader is None and not h.ui.lip_ready
-    assert h.ui.model_failed and not h.ui._can_begin()
+    load.assert_not_called()
+    assert h.ui.reader is original and h.ui.lip_ready
+    assert h.ui.language == 'zh-Hans' and h.ui.language_popup.selected_index == 0
+    assert not h.ui.model_failed and h.ui._can_begin()
     assert h.ui.language_popup.enabled and not h.ui.language_switching
     assert '英文口型模型' in h.ui.result.text and '/private' not in h.ui.result.text
 
 
-def test_switch_back_to_chinese_loads_chinese_reader_and_adapter(h, monkeypatch):
+def test_native_target_failure_reloads_previous_reader_and_rolls_back(h):
+    h.ui.input_mode = 'lip-only'
+    original = h.ui.reader
+    restored = SimpleNamespace(enc_device=SimpleNamespace(type='cpu'))
+    calls = []
+    def create(language):
+        assert h.ui.reader is None
+        calls.append(language)
+        if language == 'en':
+            raise RuntimeError('/private/model/path')
+        return restored, 'restored-digest'
+    h.ui._create_visual = create
+    choose(h, 'en')
+    finish_load(h)
+    assert calls == ['en', 'zh']
+    assert h.ui.reader is restored and h.ui.reader is not original
+    assert h.ui.reader_language == 'zh' and h.ui.language == 'zh-Hans'
+    assert h.ui.lip_ready and not h.ui.model_failed and h.ui._can_begin()
+    assert '/private' not in h.ui.result.text
+
+
+def test_failed_target_and_restore_leave_previous_selection_unavailable_and_retryable(h):
+    h.ui.input_mode = 'lip-only'
+    h.ui._create_visual = Mock(side_effect=RuntimeError('model load failed'))
+    choose(h, 'en')
+    finish_load(h)
+    assert h.ui._create_visual.call_args_list == [(('en',),), (('zh',),)]
+    assert h.ui.reader is None and not h.ui.lip_ready
+    assert h.ui.language == 'zh-Hans' and h.ui.model_failed and not h.ui._can_begin()
+    replacement = SimpleNamespace(enc_device=SimpleNamespace(type='cpu'))
+    h.ui._create_visual = Mock(return_value=(replacement, 'new-digest'))
+    choose(h, 'zh-Hans')
+    finish_load(h)
+    assert h.ui.reader is replacement and h.ui._can_begin() and not h.ui.model_failed
+    assert h.ui.error is None and h.ui.result.text == ''
+
+
+def test_switch_back_to_chinese_uses_ready_speech_without_queuing_visual_work(h):
+    english = english_ready(h)
+    task_count = len(h.executor.tasks)
+    choose(h, 'zh-Hant')
+    assert len(h.executor.tasks) == task_count
+    assert h.ui.reader is english and h.ui.reader_language == 'en'
+    assert not h.ui.lip_ready and h.ui.speech_ready and h.ui._can_begin()
+    assert h.ui.language == 'zh-Hant'
+
+
+def test_lip_only_switch_back_to_chinese_loads_chinese_reader_and_adapter(h, monkeypatch):
     english_ready(h)
+    h.ui.input_mode = 'lip-only'
     reader = SimpleNamespace(enc_device=SimpleNamespace(type='cpu'), encode=Mock())
     def load(*args):
         assert h.ui.reader is None
@@ -132,6 +193,59 @@ def test_switch_back_to_chinese_loads_chinese_reader_and_adapter(h, monkeypatch)
     backend._reader.assert_called_once_with('checkpoint', 'source', 40, .1, 'mps')
     backend._load_adapter.assert_called_once_with(reader, 'adapter')
     assert reader.encode.call_args.args[0].shape == (25, 96, 96)
+
+
+def test_matching_visual_reader_is_reused_without_preflight_or_native_load(h):
+    original = h.ui.reader
+    h.ui._preflight_visual = Mock(side_effect=AssertionError('no file scan for reuse'))
+    h.ui._create_visual = Mock(side_effect=AssertionError('no repeated load'))
+    assert h.ui._ensure_visual('zh') is original
+    h.ui._preflight_visual.assert_not_called()
+    h.ui._create_visual.assert_not_called()
+    assert h.ui.lip_ready
+
+
+def test_close_during_preflight_keeps_old_reader_for_owning_worker_cleanup(h):
+    original = h.ui.reader
+    h.ui._preflight_visual = lambda language: setattr(h.ui, 'closed', True)
+    h.ui._create_visual = Mock()
+    with pytest.raises(RuntimeError, match='closing'):
+        h.ui._ensure_visual('en')
+    assert h.ui.reader is original
+    h.ui._create_visual.assert_not_called()
+
+
+@pytest.mark.parametrize('nested', [False, True])
+def test_chinese_preflight_checks_only_model_and_source_files(h, tmp_path, monkeypatch, nested):
+    source = tmp_path / 'source'
+    vsr = source / 'VSR' if nested else source
+    files = [tmp_path / 'checkpoint', tmp_path / 'adapter',
+             vsr / 'conf/train_cncvs_2_3_cnvsrc.yaml', vsr / 'datamodule/char_units.txt']
+    for path in files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('asset')
+    h.globals.update(CHECKPOINT=files[0], ADAPTER=files[1], SOURCE=source)
+    monkeypatch.setitem(sys.modules, 'torch', None)
+    monkeypatch.setitem(sys.modules, 'evaluate_cnvsrc', None)
+    del h.ui._preflight_visual
+    h.ui._preflight_visual('zh')
+    files[-1].write_text('')
+    with pytest.raises(FileNotFoundError):
+        h.ui._preflight_visual('zh')
+
+
+def test_english_preflight_needs_only_target_files_and_no_native_imports(tmp_path, monkeypatch):
+    from english_lips import preflight_english_assets
+    monkeypatch.setitem(sys.modules, 'lipflow.vsr', None)
+    monkeypatch.setitem(sys.modules, 'torch', None)
+    for relative in ('vsr/model.json', 'vsr/model.pth', 'lm/model.json', 'lm/model.pth'):
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('asset')
+    assert preflight_english_assets(tmp_path) == tmp_path
+    (tmp_path / 'lm/model.pth').unlink()
+    with pytest.raises(FileNotFoundError, match='lm/model.pth'):
+        preflight_english_assets(tmp_path)
 
 
 def test_hiding_during_load_does_not_leave_selected_language_permanently_unavailable(h):

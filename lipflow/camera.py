@@ -143,6 +143,7 @@ class Camera:
             cap = cv2.VideoCapture(self.index)
             self._file_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
             if not cap.isOpened():
+                cap.release()
                 raise RuntimeError(f"Could not open {self.index}")
             return cap
         self._file_fps = None
@@ -158,6 +159,7 @@ class Camera:
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         cap.set(cv2.CAP_PROP_FPS, 30)
         if not cap.isOpened():
+            cap.release()
             if WINDOWS:
                 raise RuntimeError("Could not open the camera. Turn on Settings → Privacy & security → Camera → "
                                    "Let desktop apps access your camera, and close other apps using it")
@@ -173,13 +175,8 @@ class Camera:
             if self._tracker is None:
                 self._tracker = FaceTracker()
             self.error = None
-        except Exception as e:
-            self.error = str(e)
-            print(f"[camera] {e}")
-            return
-        t0 = time.monotonic()
-        warm = n_read = 0
-        try:
+            t0 = time.monotonic()
+            warm = n_read = 0
             while not self._stop.is_set():
                 ok, frame = self._cap.read()
                 if self._file_fps:  # play the file back in real time
@@ -211,9 +208,13 @@ class Camera:
                         print(f"[camera] on_frame: {e}")
                 if rec is None and not self.track_always and now - self._last_used > self.idle_close:
                     break
+        except Exception as e:
+            self.error = str(e)
+            print(f"[camera] {type(e).__name__}")
         finally:
-            self._cap.release()
-            self._cap = None
+            cap, self._cap = self._cap, None
+            if cap is not None:
+                cap.release()
             self.ready.clear()
 
 

@@ -1,0 +1,8 @@
+[
+  {"reference": "桌上的水已经凉了", "entities": []},
+  {"reference": "先别关闭这个窗口", "entities": []},
+  {"reference": "小周下午两点来取材料", "entities": [{"kind": "person_name", "text": "小周"}, {"kind": "number", "text": "两"}]},
+  {"reference": "这批样品还剩二十七份", "entities": [{"kind": "number", "text": "二十七"}]},
+  {"reference": "等文件检查完以后再通知大家开会", "entities": []},
+  {"reference": "由于停车场的入口正在维修请大家从旁边的小路绕到大楼后面", "entities": []}
+]

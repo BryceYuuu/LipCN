@@ -25,4 +25,5 @@ export TOKENIZERS_PARALLELISM=false
 # The retained upstream Python package still reads LIPFLOW_HOME internally.
 # Do not inherit the original app's profile into this separate product.
 export LIPFLOW_HOME="${LIPCN_PROFILE_DIR:-$HOME/Library/Application Support/LipCN}"
-exec "$python_bin" "$script_dir/live_test.py" "$@"
+export PYTHONPATH="$repo_dir${PYTHONPATH:+:$PYTHONPATH}"
+exec "$python_bin" -m lipcn "$@"

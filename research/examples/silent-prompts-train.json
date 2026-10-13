@@ -1,0 +1,8 @@
+[
+  {"reference": "请把窗帘打开", "entities": []},
+  {"reference": "今天不用发送文件", "entities": []},
+  {"reference": "小林九点到会议室", "entities": [{"kind": "person_name", "text": "小林"}, {"kind": "number", "text": "九"}]},
+  {"reference": "请预留三十二个座位", "entities": [{"kind": "number", "text": "三十二"}]},
+  {"reference": "我想先确认收件地址然后再寄出包裹", "entities": []},
+  {"reference": "如果下午下雨就把原定的室外活动改到楼上的教室里", "entities": []}
+]

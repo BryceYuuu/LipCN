@@ -380,3 +380,130 @@ def test_warmup_failure_is_retryable_and_redacted():
     assert not subject.warmup() and subject.last_error == 'RuntimeError'
     subject.generator = lambda _: '{"natural":"你好","concise":"你好"}'
     assert subject.warmup() and subject.last_error is None
+
+
+@pytest.mark.parametrize('language', ['zh', 'zh-Hans', 'zh-Hant', 'en'])
+@pytest.mark.parametrize('candidates', [
+    '我明天3點不去開會', ['我找張桓', '我們已經付款'], '我明天来吗',
+    'DO NOT PAY ALICE $100', 'Meet 张三 at 3 PM', 'OpenAI API v2.1',
+    [], ['', '  ', None, 3], ['', '  明天見Alex  '],
+])
+@pytest.mark.parametrize('source', ['speech', 'lips'])
+def test_initial_is_exactly_full_first_option_with_real_script_conversion(language, candidates, source):
+    def generate(messages):
+        payload = json.loads(messages[-1]['content'])
+        raw = payload.get('original', payload.get('原文'))
+        return json.dumps({'natural': raw, 'concise': raw}, ensure_ascii=False)
+    subject = hc.CandidateFormatter(generator=generate)
+    initial = subject.initial(candidates, source=source, protected_names=['張桓'], language=language)
+    full = subject.format(candidates, source=source, protected_names=['張桓'], language=language)
+    assert initial.raw == full.raw
+    assert initial.variants == full.variants[:1]
+    assert initial.low_consistency == full.low_consistency
+    assert initial.elapsed_seconds >= 0
+
+
+def test_initial_default_is_simplified_and_traditional_uses_real_phrase_conversion():
+    subject = hc.CandidateFormatter()
+    assert subject.initial('頭髮發展，軟件100元').variants[0].text == '头发发展，软件100元。'
+    assert subject.initial('头发发展，软件100元', language='zh-Hant').variants[0].text == '頭髮發展，軟件100元。'
+
+
+@pytest.mark.parametrize('language', ['zh-Hans', 'zh-Hant', 'en'])
+def test_initial_never_loads_calls_or_waits_for_wording_model(monkeypatch, language):
+    def forbidden(*args, **kwargs):
+        pytest.fail('initial must not load or call the wording model')
+    class ForbiddenLock:
+        def __enter__(self):
+            pytest.fail('initial must not wait for a wording-model lock')
+        def __exit__(self, *args):
+            pass
+    subject = hc.CandidateFormatter(model_path='nonexistent/model', generator=forbidden)
+    subject._lock = ForbiddenLock()
+    monkeypatch.setattr(subject, 'load', forbidden)
+    monkeypatch.setattr(subject, '_generate', forbidden)
+    raw = 'I will not pay $100' if language == 'en' else '明天3点我不付款'
+    initial = subject.initial(raw, language=language)
+    assert len(initial.variants) == 1 and initial.variants[0].text
+    assert subject._model is None and not subject._warmed
+
+
+def test_initial_script_failure_is_explicit_and_matches_full(monkeypatch):
+    def fail(text):
+        raise hc.LanguageConversionError('简繁转换组件不可用')
+    monkeypatch.setattr(hc, 'to_traditional', fail)
+    subject = hc.CandidateFormatter()
+    for method in (subject.initial, subject.format):
+        with pytest.raises(hc.LanguageConversionError, match='简繁转换组件不可用'):
+            method('我们不能付款', language='zh-Hant')
+
+
+def install_fake_stream(monkeypatch, parts, *, error=None):
+    """Exercise native-generator ownership with no MLX import or model allocation."""
+    from types import SimpleNamespace
+    state = {'consumed': [], 'closed': 0}
+    def stream(model, tokenizer, **kwargs):
+        state['kwargs'] = kwargs
+        try:
+            for part in parts:
+                state['consumed'].append(part)
+                yield SimpleNamespace(text=part)
+            if error:
+                raise error
+        finally:
+            state['closed'] += 1
+    monkeypatch.setitem(sys.modules, 'mlx_lm', SimpleNamespace(stream_generate=stream))
+    monkeypatch.setitem(sys.modules, 'mlx_lm.sample_utils', SimpleNamespace(make_sampler=lambda **kwargs: None))
+    subject = hc.CandidateFormatter()
+    subject._model = (object(), SimpleNamespace(apply_chat_template=lambda *args, **kwargs: 'prompt'))
+    return subject, state
+
+
+@pytest.mark.parametrize('payload', [
+    {'natural': '你好。', 'concise': '你好。'},
+    {'natural': 'A brace } and { inside text', 'concise': 'An escaped "quote" and \\ path'},
+    {'natural': '明天3點不能付款。', 'concise': '明天3點不能付款。'},
+])
+def test_stream_stops_only_after_both_complete_json_strings(monkeypatch, payload):
+    text = json.dumps(payload, ensure_ascii=True)
+    parts = list(text) + ['UNREQUESTED TAIL']
+    subject, state = install_fake_stream(monkeypatch, parts)
+    output = subject._generate(hc.build_messages('你好'))
+    assert json.loads(output) == payload
+    assert state['consumed'] == list(text)
+    assert state['closed'] == 1
+    assert state['kwargs']['max_tokens'] == 256
+
+
+def test_structured_stop_accepts_complete_fence_but_not_partial_closing_fence(monkeypatch):
+    parts = ['```json\n', '{"natural":"你好","concise":"你好"}', '\n``', '`', 'TAIL']
+    subject, state = install_fake_stream(monkeypatch, parts)
+    output = subject._generate(hc.build_messages('你好'))
+    assert hc._parse_output(output) == {'natural': '你好', 'concise': '你好'}
+    assert state['consumed'] == parts[:-1]
+    assert state['closed'] == 1
+
+
+@pytest.mark.parametrize('parts', [
+    ['{"natural":"你好","concise":"你'],
+    ['{"natural":"你好",', '"concise":"你好",', '"unexpected":true}'],
+    ['{"natural":"你好"}'],
+    ['{"natural":null,"concise":false}'],
+])
+def test_stream_incomplete_or_wrong_schema_never_becomes_a_displayed_partial(monkeypatch, parts):
+    subject, state = install_fake_stream(monkeypatch, parts)
+    # A local model path enables the normal model-generation branch in format.
+    subject.model_path = Path('not-read-because-model-is-injected')
+    result = subject.format('你好')
+    assert len(result.variants) == 3
+    assert all(variant.text == '你好。' for variant in result.variants)
+    assert state['consumed'] == parts and state['closed'] == 1
+
+
+def test_stream_exception_closes_generator_and_falls_back_without_leaking(monkeypatch):
+    subject, state = install_fake_stream(monkeypatch, ['{"natural":'], error=RuntimeError('PRIVATE PROMPT'))
+    subject.model_path = Path('not-read-because-model-is-injected')
+    result = subject.format('你好')
+    assert all(variant.text == '你好。' for variant in result.variants)
+    assert 'PRIVATE PROMPT' not in str(result)
+    assert state['closed'] == 1

@@ -8,8 +8,8 @@ if TYPE_CHECKING:
     from lipflow.vsr import LipReader
 
 
-def load_english_reader(model_dir: str | Path) -> LipReader:
-    """Build and warm the reader on the caller's model worker; never download files."""
+def preflight_english_assets(model_dir: str | Path) -> Path:
+    """Check only local files, before releasing an already usable visual model."""
     root = Path(model_dir).expanduser()
     required = ('vsr/model.json', 'vsr/model.pth', 'lm/model.json', 'lm/model.pth')
     missing = [name for name in required
@@ -19,6 +19,12 @@ def load_english_reader(model_dir: str | Path) -> LipReader:
             'English lip-reading assets are missing or empty: ' + ', '.join(missing)
             + '. Prepare them locally and set LIPCN_ENGLISH_MODELS to their parent directory.'
         )
+    return root
+
+
+def load_english_reader(model_dir: str | Path) -> LipReader:
+    """Build and warm the reader on the caller's model worker; never download files."""
+    root = preflight_english_assets(model_dir)
 
     import numpy as np
     from lipflow.vsr import LipReader

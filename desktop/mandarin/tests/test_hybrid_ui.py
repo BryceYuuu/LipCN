@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import os
 import sys
 from concurrent.futures import Future
 from pathlib import Path
@@ -14,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 from languages import DEFAULT_LANGUAGE, LANGUAGE_CHOICES, recognition_language
+from input_settings import INPUT_MODES
 
 SOURCE = Path(__file__).resolve().parents[1] / 'live_test.py'
 
@@ -29,11 +31,20 @@ class Widget:
     def indexOfSelectedItem(self):
         return self.selected_index
 
+    def tag(self):
+        return 0
+
     def selectItemAtIndex_(self, index):
         self.selected_index = index
 
     def setEnabled_(self, value):
         self.enabled = bool(value)
+
+    def setHidden_(self, value):
+        self.hidden = bool(value)
+
+    def setEditable_(self, value):
+        self.editable = bool(value)
 
     def setString_(self, value):
         self.text = value
@@ -173,6 +184,8 @@ class Harness:
         self.globals = {
             'DEFAULT_LANGUAGE': DEFAULT_LANGUAGE, 'LANGUAGE_CHOICES': LANGUAGE_CHOICES,
             'recognition_language': recognition_language,
+            'INPUT_MODES': INPUT_MODES, 'os': os,
+            'PROFILE': Path('/unused-test-profile'), 'save_input_mode': lambda *args: None,
             '__name__': 'headless_hybrid_ui', 'MAX_SECONDS': 20.0, 'TAIL_SECONDS': .4,
             'time': SimpleNamespace(monotonic=lambda: self.now),
             'AppHelper': SimpleNamespace(
@@ -198,6 +211,7 @@ class Harness:
         ui = self.ui
         defaults = dict(
             language=DEFAULT_LANGUAGE, reader_language='zh', language_switching=False,
+            input_mode='speech-first', pending_previous_language=None, mode_popup=Widget(),
             language_popup=Widget(), language_worker=None,
             reader=object(), camera=None, closed=False, suspended=False, loading=False,
             processing=False, recording=False, pending_stop=None, pending_begin=False,
@@ -507,7 +521,9 @@ def configure_startup(h, monkeypatch, *, speech=True, lips=True, wording=True,
             on_wording()
         return outcome('wording', wording)
 
-    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(set_num_threads=lambda count: None))
+    monkeypatch.setitem(sys.modules, 'torch', SimpleNamespace(set_num_threads=lambda count: None,
+        backends=SimpleNamespace(mps=SimpleNamespace(is_available=lambda: False)),
+        mps=SimpleNamespace(empty_cache=lambda: None, synchronize=lambda: None)))
     monkeypatch.setitem(sys.modules, 'evaluate_cnvsrc', SimpleNamespace(
         _reader=load_reader, _load_adapter=lambda *args: {'file_sha256': '0' * 64}))
     h.globals.update(CHECKPOINT='unused', SOURCE='unused', ADAPTER='unused',
@@ -516,14 +532,15 @@ def configure_startup(h, monkeypatch, *, speech=True, lips=True, wording=True,
     h.globals['AppHelper'].callAfter = lambda fn, *args: fn(*args)
     h.ui.asr = SimpleNamespace(warmup=lambda: outcome('speech', speech))
     h.ui.formatter = SimpleNamespace(warmup=load_wording)
+    h.ui._preflight_visual = lambda language: None
     return calls
 
 
 def test_component_warmup_does_not_capture_and_tolerates_unavailable_asr(h, monkeypatch):
     calls = configure_startup(h, monkeypatch, speech=FileNotFoundError('missing ASR'))
     h.ui._load_model()
-    assert calls == ['speech', 'lips', 'lip_encode', 'wording']
-    assert set(h.ui.warmup_seconds) == {'speech', 'lips', 'wording'}
+    assert calls == ['speech', 'lips', 'lip_encode']
+    assert {'speech', 'lips'} <= set(h.ui.warmup_seconds)
     assert not h.ui.speech_ready and h.ui.lip_ready and h.ui._can_begin()
     assert not h.cameras and h.ui.audio.starts == 0
 
@@ -539,8 +556,8 @@ def test_shutdown_prevents_unused_component_warmup(h, monkeypatch):
 def test_voice_warmup_still_finishes_when_visual_model_cannot_load(h, monkeypatch):
     calls = configure_startup(h, monkeypatch, lips=False)
     h.ui._load_model()
-    assert calls == ['speech', 'lips', 'wording']
-    assert h.ui.speech_ready and h.ui.wording_ready and not h.ui.lip_ready
+    assert calls == ['speech']
+    assert h.ui.speech_ready and not h.ui.wording_ready and not h.ui.lip_ready
     assert h.ui._can_begin() and not h.ui.loading and not h.ui.model_failed
     assert h.ui.result.text == ''
 

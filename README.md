@@ -13,17 +13,17 @@ LipCN focuses on Mandarin input and also integrates the original English lip-rea
 | 中文 | English |
 | --- | --- |
 | **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output for display, copy and insertion; English uses the original visual model with camera-only capture. |
-| **中文语音优先，口型回退**：有可靠语音时使用本地 Whisper；无声或语音可信度不足时，尝试中文口型识别。 | **Mandarin speech first, lip-reading fallback:** local Whisper handles accepted speech; silent or low-confidence audio falls back to the Mandarin visual model. |
-| **三个表达方案**：结果区仅显示“方案一、方案二、方案三”；选择后复制或输入原应用。 | **Three wording options:** a minimal result area shows Option 1, 2 and 3; copy or insert the option you choose. |
+| **两种输入方式**：语音优先使用本地 Whisper 并按需回退口型；纯口型模式只用摄像头，不申请或打开麦克风。 | **Two input modes:** speech-first uses local Whisper with visual fallback on demand; lip-only uses the camera without requesting or opening the microphone. |
+| **先出结果、直接修改**：方案一先显示并开放复制/输入，再补充方案二、三；三个文本框可编辑，后续生成保留你的修改。 | **Early, editable results:** Option 1 is usable before Options 2 and 3 finish. Edit any available option before copying or inserting; later generation preserves your edits. |
 | **本地文字整理**：补标点、整理表达，并检查数字、时间、否定等改动；无法可靠改写时保留原文，允许方案重复。 | **Local wording cleanup:** punctuation and phrasing with checks on numbers, time references, negation and other changes; uncertain edits keep the original wording, so options may repeat. |
 | **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
 | **摄像头与嘴部预览**：查看脸部画面和嘴部跟踪；录制最长 20 秒，结束时保留短暂句尾。 | **Camera and mouth preview:** see the camera feed and mouth tracking; recordings are capped at 20 seconds with a short ending buffer. |
 | **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
-| **分阶段启动与安全退出**：语音就绪后即可开始；其余模型继续准备。加载、识别和资源释放使用同一工作线程。 | **Staged startup and orderly shutdown:** start recording once speech is ready while other models continue loading; one worker owns loading, inference and cleanup. |
+| **按需加载与失败恢复**：先准备当前输入方式需要的识别器；其余模型按需加载。语言切换先检查文件，失败时恢复原选择，并可重试。 | **On-demand loading and recovery:** prepare the selected recognizer first; load other models only when needed. Language switches check assets before replacing a model and restore the previous selection on failure, with retry available. |
 
-上述功能对应当前 **LipCN 2.2.0**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
+上述功能对应当前 **LipCN 2.3.0**（`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
 
-These features describe **LipCN 2.2.0** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
+These features describe **LipCN 2.3.0** (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
 
 ## 界面 / Preview
 
@@ -46,22 +46,29 @@ git clone https://github.com/BryceYuuu/LipCN.git
 cd LipCN
 ```
 
-按照 **[中文桌面运行说明 / Mandarin desktop setup](desktop/mandarin/README.md)** 安装依赖、准备模型并启动。此仓库发布源代码与测试；大型模型、研究适配权重和数据集需要单独准备，不包含可直接分发的完整安装包。
+安装依赖后，统一使用 `lipcn` 启动当前桌面窗口。`doctor` 检查环境和模型；`setup` 只有带 `--download` 才联网下载，并校验固定版本与 SHA-256。详细说明见 **[桌面安装与模型准备](desktop/mandarin/README.md)**。
 
-Follow **[Mandarin desktop setup](desktop/mandarin/README.md)** to install dependencies, prepare models and launch the app. This repository contains source code and tests. Large models, research adapters and datasets must be obtained separately; this is not a self-contained application installer.
+Use `lipcn` to launch the current desktop. `doctor` checks the environment and assets; `setup` downloads only with `--download`, using pinned revisions and SHA-256 verification. See **[desktop setup](desktop/mandarin/README.md)**.
 
-1. 准备好模型并允许摄像头、麦克风权限。 / Prepare models and allow camera and microphone access.
-2. 选择“简体中文”“繁體中文”或“English”，待模型就绪后点击“开始说一句”，也可使用已授权的右 Command。 / Choose Simplified Chinese, Traditional Chinese or English; once ready, click Start or use an authorized Right Command hotkey.
-3. 说话或自然默念，结束后核对三个方案。 / Speak or mouth your sentence, then review the three options.
-4. 选择复制或输入；输入原应用还需要辅助功能权限。 / Choose Copy or Insert; insertion into the original app also requires Accessibility permission.
+```bash
+python3.12 -m venv .venv
+.venv/bin/python -m pip install -e '.[desktop]'
+.venv/bin/lipcn doctor --mode speech
+.venv/bin/lipcn setup --mode speech --download
+.venv/bin/lipcn
+```
 
-只在主动开始后采集。结束、取消、隐藏、最小化或关闭会停止采集。模型仍在后台准备时，第一句识别可能需要等待初始化完成。
+1. 选择语言与输入方式；每次启动默认简体中文，输入方式会记住上次选择。 / Choose a language and input mode. Each launch starts in Simplified Chinese; the input-mode preference is remembered.
+2. 点击“开始说一句”，说话或自然默念，再点击“结束并识别”。 / Click Start, speak or silently mouth a sentence, then finish.
+3. 方案一出现即可修改、复制或输入；后续两个方案准备好后自动显示。 / Edit, copy or insert Option 1 as soon as it appears; the other options follow.
 
-Capture begins only after an explicit start. Finishing, cancelling, hiding, minimizing or closing stops capture. If background initialization is still running, the first recognition may wait for it to finish.
+只有主动开始才采集；结束、取消、隐藏、最小化或关闭会停止采集。纯口型及 English 不打开麦克风。输入原应用需要辅助功能权限。简繁切换共用中文模型；English 识别英文口型，不做翻译。
 
-每次打开默认简体中文。简繁切换即时生效；中英文切换需要加载对应模型。加载、录制或识别过程中暂不可切换语言。English 识别英文口型，不调用语音识别或翻译。
+Capture starts only on request and stops on finish, cancel, hide, minimize or close. Lip-only and English never open the microphone. Insertion requires Accessibility permission. Both Chinese scripts share the Mandarin model; English reads English lips without translation.
 
-Each launch defaults to Simplified Chinese. Switching Chinese writing systems is immediate; switching between Mandarin and English loads the corresponding model. Language selection is disabled while loading, recording or recognizing. English reads English lip movements without speech recognition or translation.
+中文纯口型需要另行准备兼容的研究 adapter；仓库与通用安装包不分发私人权重。缺少该组件时仍可使用已准备好的中文语音输入和英文口型。安装不会把研究模型变成不受限制的商用模型。
+
+Mandarin visual recognition requires a compatible research adapter, distributed separately. Private weights are absent from the repository and general-purpose package. Prepared Mandarin speech and English visual modes remain usable without it. Model licenses continue to apply.
 
 ## 项目结构 / Project layout
 
@@ -75,13 +82,17 @@ Each launch defaults to Simplified Chinese. Switching Chinese writing systems is
 
 ## 性能与验证 / Performance and validation
 
-本机开发测试中，四条 8.6–14.3 秒的公开中文音频，在三个模型驻留且完成预热后，从识别到三个方案平均约 **5.48 秒**（4.88–5.80 秒）。本次启动修复的三次测试中，开始按钮在模型初始化开始后约 **4.1–6.2 秒**可用；其余模型继续加载。这些是特定 Mac 上的小样本结果，并非速度或准确率保证。
+2.3.0 将“识别完成后的第一条可用结果”和“后续文字整理”分开：第一条不加载表达模型。真实本机文字整理测试中，四条合成测试句的第一条准备耗时为 **0.02–15.14 毫秒**；全部三个方案为 **0.57–9.40 秒**（首条含表达模型冷加载）。这些数字只衡量文字整理，不含录制、语音/口型识别，不能作为整句端到端速度承诺。
 
-In local development testing, four public Mandarin clips lasting 8.6–14.3 seconds took an average of **5.48 seconds** from recognition to three options after all models were resident and warmed up (4.88–5.80 seconds). In three startup checks, recording became available about **4.1–6.2 seconds** after model initialization began, while the remaining models continued loading. These small-sample results on one Mac are not speed or accuracy guarantees.
+Version 2.3.0 separates the first usable recognition from subsequent wording work. The first option does not load the wording model. On this development Mac, four synthetic-text checks took **0.02–15.14 ms** to prepare Option 1 and **0.57–9.40 s** for all three options, including a cold model load in the first case. These are formatting-only measurements, excluding capture and recognition.
 
-当前发布代码全仓测试为 **1136 项通过、24 项跳过**（平台或可选硬件/模型相关），覆盖语言切换、英文路由、简繁输出与内容保护。另用原项目的公开视频片段验证英文口型：模型加载与预热约 **3.17 秒**，7.7 秒片段的视觉编码与三个候选解码合计约 **1.95 秒**，不包含视频预处理和文字整理。自动测试与单个样例不能代替真实麦克风、摄像头、全局快捷键、跨应用输入和准确率验证。
+当前没有经确认的真实无声独立样本，因此本版**不宣称无声中文准确率提高，也没有替换默认权重**。新增独立采集、数据隔离审计，以及替换/删除/插入错误、人名和数字错误报告，见 [真实无声采集与验收](research/SILENT_EVALUATION.md)。采集工具会明确保存你主动录制的本地视频；普通桌面输入仍不保存视频或句子历史。
 
-The release source passed **1,136 tests, with 24 skipped** for platform-specific or optional hardware/model checks, covering language switching, English routing, Chinese script output and content guards. An offline check using the original project's public sample took about **3.17 seconds** to load and warm the English model and **1.95 seconds** to encode a 7.7-second clip and decode three candidates, excluding video preprocessing and wording cleanup. Automated tests and one sample do not replace real microphone, camera, global-hotkey, cross-app insertion or accuracy checks.
+There are no verified independent silent-speech samples yet, so this version **makes no silent-Mandarin accuracy claim and does not replace the default weights**. New tools support explicit local collection, split-leakage audits and substitution/deletion/insertion, name and number error reports. See [silent collection and evaluation](research/SILENT_EVALUATION.md). The collection tool explicitly saves recordings; ordinary desktop input still stores neither videos nor sentence history.
+
+当前全仓回归 **1,310 项通过、24 项跳过**。自动回归覆盖先显示后补全、编辑保留、取消隔离、纯口型禁用语音、启动和语言失败恢复；实际设备与无声准确率需单独验证。
+
+The full repository suite passes **1,310 tests, with 24 skipped**. Automated regressions cover early results, edit preservation, cancellation isolation, speech exclusion in lip-only mode, startup and language-switch recovery. Real-device behavior and silent accuracy require separate validation.
 
 ## 许可 / License
 

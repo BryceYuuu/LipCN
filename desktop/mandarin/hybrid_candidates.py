@@ -291,6 +291,55 @@ def _parse_output(output: str) -> dict[str, str]:
     return value
 
 
+def _prepare_input(candidates: Sequence[str] | str, protected_names: Sequence[str],
+                   language: str) -> tuple[list[str], Sequence[str]]:
+    if language != 'zh':  # Compatibility with the original Mandarin-only API.
+        validate_language(language)
+    if isinstance(candidates, str):
+        candidates = [candidates]
+    clean = [text.strip() for text in candidates if isinstance(text, str) and text.strip()]
+    if language in ('zh-Hans', 'zh-Hant'):
+        clean = [to_simplified(text) for text in clean]
+        protected_names = tuple(to_simplified(name) for name in protected_names if name)
+    return clean, protected_names
+
+
+def _initial_result(candidates: Sequence[str], source: str, *, english: bool) -> CandidateResult:
+    """Build the same first variant for immediate display and full formatting."""
+    raw = candidates[0] if candidates else ''
+    if english:
+        if not raw or _HAN.search(raw):
+            variants = (Variant('Original', raw),) if raw else ()
+            return CandidateResult(raw, variants, (), 'passthrough' if raw else 'basic', False, 0.0)
+        first = Variant('Original', raw)
+        warning = 'Lip recognition may be incorrect; review the original.'
+        disagreement = 'Lip candidates disagree; all alternatives use only the first recognition.'
+    else:
+        if not _HAN.search(raw):
+            variants = (Variant('原始识别', raw),) if raw else ()
+            return CandidateResult(raw, variants, (), 'passthrough', False, 0.0)
+        first = Variant('保留原意', punctuate(raw), False, '只整理标点，保留原始识别用词')
+        warning = '口型识别可能有误；通顺表达不代表识别正确，请核对原文。'
+        disagreement = '口型候选差异较大，当前可信度不足；以下方案都只依据第一条原文。'
+    low_consistency = candidates_disagree(candidates) if source == 'lips' else False
+    warnings = [warning] if source == 'lips' else []
+    if low_consistency:
+        warnings.append(disagreement)
+    return CandidateResult(raw, (first,), tuple(warnings), 'basic', low_consistency, 0.0)
+
+
+def _present_result(result: CandidateResult, language: str, started: float) -> CandidateResult:
+    # The same converted text is used for display, copy and insertion in either
+    # the immediate or complete result. Script changes are not wording changes.
+    if language in ('zh-Hans', 'zh-Hant') and result.variants:
+        result = replace(result, variants=(replace(result.variants[0], label='保留原意'),
+                                          *result.variants[1:]))
+    if language == 'zh-Hant':
+        result = replace(result, raw=to_traditional(result.raw), variants=tuple(
+            replace(variant, text=to_traditional(variant.text)) for variant in result.variants))
+    return replace(result, elapsed_seconds=time.monotonic() - started)
+
+
 class CandidateFormatter:
     """One reusable, lazy-loaded local model; call from the inference worker.
 
@@ -343,62 +392,77 @@ class CandidateFormatter:
         if self.generator is not None:
             return self.generator(messages)
         self.load()
-        from mlx_lm import generate
+        from mlx_lm import stream_generate
         from mlx_lm.sample_utils import make_sampler
         model, tokenizer = self._model
         prompt = tokenizer.apply_chat_template(messages, tokenize=False,
                                                add_generation_prompt=True, enable_thinking=False)
-        return generate(model, tokenizer, prompt=prompt, max_tokens=256,
-                        sampler=make_sampler(temp=0), verbose=False)
+        # Keep the tested token ceiling. Stop only after both strings have been
+        # fully emitted and passed the existing JSON/schema parser, never at a
+        # brace inside a string or an incomplete/escaped token fragment.
+        responses = stream_generate(model, tokenizer, prompt=prompt, max_tokens=256,
+                                    sampler=make_sampler(temp=0))
+        output = ''
+        try:
+            for response in responses:
+                output += response.text
+                try:
+                    _parse_output(output)
+                except ValueError:
+                    continue
+                return output
+            return output  # The caller rejects incomplete or invalid responses.
+        finally:
+            # MLX's stream context synchronizes outstanding native work here.
+            # Closing on the owner thread also keeps shutdown/cancellation safe.
+            responses.close()
+
+    def initial(self, candidates: Sequence[str] | str, *, source: str = 'lips',
+                protected_names: Sequence[str] = (), language: str = 'zh-Hans') -> CandidateResult:
+        """Return only option one, without loading or calling the language model.
+
+        Its raw/text/variant fields match the first entry in ``format`` for the
+        same arguments. No wording-model lock is required for this pure path.
+        """
+        started = time.monotonic()
+        clean, _ = _prepare_input(candidates, protected_names, language)
+        result = _initial_result(clean, source, english=language == 'en')
+        return _present_result(result, language, started)
 
     def format(self, candidates: Sequence[str] | str, *, source: str = "lips",
                protected_names: Sequence[str] = (), language: str = "zh") -> CandidateResult:
         """Return display/copy text in the selected language; legacy ``zh`` is unchanged."""
-        if language == 'zh':
-            return self._format_chinese(candidates, source=source, protected_names=protected_names)
-        validate_language(language)
         started = time.monotonic()
-        if isinstance(candidates, str):
-            candidates = [candidates]
-        clean = [text.strip() for text in candidates if isinstance(text, str) and text.strip()]
+        clean, names = _prepare_input(candidates, protected_names, language)
         if language == 'en':
-            return self._format_english(clean, source=source, protected_names=protected_names)
-        # Guard Chinese content in one writing system. Converting only the UI
-        # would leave clipboard/insertion text inconsistent with the selection.
-        clean = [to_simplified(text) for text in clean]
-        names = tuple(to_simplified(name) for name in protected_names if name)
-        result = self._format_chinese(clean, source=source, protected_names=names,
-                                      normalize_script=True)
-        if len(result.variants) == 1:
+            result = self._format_english(clean, source=source, protected_names=names)
+        else:
+            result = self._format_chinese(clean, source=source, protected_names=names,
+                                          normalize_script=language != 'zh')
+        if language in ('zh-Hans', 'zh-Hant') and len(result.variants) == 1:
             # A Chinese selection can contain only a foreign name or an acronym.
             # Retain it, without translating it or invoking the Chinese editor.
             result = replace(result, variants=tuple(
                 replace(result.variants[0], label=label)
                 for label in ('保留原意', '自然表达', '简洁表达')))
-        if language == 'zh-Hant':
-            result = replace(result, raw=to_traditional(result.raw), variants=tuple(
-                replace(variant, text=to_traditional(variant.text)) for variant in result.variants))
-        return replace(result, elapsed_seconds=time.monotonic() - started)
+        return _present_result(result, language, started)
 
     def _format_english(self, candidates: Sequence[str], *, source: str,
                         protected_names: Sequence[str]) -> CandidateResult:
         started = time.monotonic()
-        raw = candidates[0] if candidates else ''
+        initial = _initial_result(candidates, source, english=True)
+        raw = initial.raw
         if not raw:
-            return CandidateResult('', (), (), 'basic', False, time.monotonic() - started)
+            return replace(initial, elapsed_seconds=time.monotonic() - started)
         labels = ('Original', 'Natural', 'Concise')
         if _HAN.search(raw):
             # Preserve mixed-language names/content; an English presentation is
             # never a translation request. No generator sees this text.
-            return CandidateResult(raw, tuple(Variant(label, raw) for label in labels),
-                                   (), 'passthrough', False, time.monotonic() - started)
-        low_consistency = candidates_disagree(candidates) if source == 'lips' else False
-        warnings = []
-        if source == 'lips':
-            warnings.append('Lip recognition may be incorrect; review the original.')
-        if low_consistency:
-            warnings.append('Lip candidates disagree; all alternatives use only the first recognition.')
-        variants = [Variant(labels[0], raw)]
+            return replace(initial, variants=tuple(replace(initial.variants[0], label=label) for label in labels),
+                           elapsed_seconds=time.monotonic() - started)
+        low_consistency = initial.low_consistency
+        warnings = list(initial.warnings)
+        variants = list(initial.variants)
         proposed, backend, failure = {}, 'basic', None
         if len(raw) > _MAX_INPUT:
             failure = 'Long input retained unchanged'
@@ -434,23 +498,15 @@ class CandidateFormatter:
         if isinstance(candidates, str):
             candidates = [candidates]
         clean = [x.strip() for x in candidates if isinstance(x, str) and x.strip()]
-        raw = clean[0] if clean else ""
+        initial = _initial_result(clean, source, english=False)
+        raw = initial.raw
         if not _HAN.search(raw):
             # Legacy zh callers retain their original non-Chinese passthrough.
-            variants = (Variant("原始识别", raw),) if raw else ()
-            return CandidateResult(raw, variants, (), "passthrough", False,
-                                   time.monotonic() - started)
-        if not raw:
-            return CandidateResult("", (), ("没有可整理的识别结果",), "basic", False,
-                                   time.monotonic() - started)
-        low_consistency = candidates_disagree(clean) if source == "lips" else False
-        warnings = []
-        if source == "lips":
-            warnings.append("口型识别可能有误；通顺表达不代表识别正确，请核对原文。")
-        if low_consistency:
-            warnings.append("口型候选差异较大，当前可信度不足；以下方案都只依据第一条原文。")
-        fallback = punctuate(raw)
-        variants = [Variant("保留原意", fallback, False, "只整理标点，保留原始识别用词")]
+            return replace(initial, elapsed_seconds=time.monotonic() - started)
+        low_consistency = initial.low_consistency
+        warnings = list(initial.warnings)
+        variants = list(initial.variants)
+        fallback = initial.variants[0].text
         proposed = {}
         backend = "basic"
         failure = None

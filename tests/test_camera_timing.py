@@ -43,6 +43,33 @@ class FakeCapture:
         self.released = True
 
 
+@pytest.mark.parametrize('failure', ['tracker', 'read', 'detect'])
+def test_camera_failure_releases_capture_and_publishes_retryable_error(monkeypatch, failure):
+    clock = SimulatedClock()
+    cap = FakeCapture(clock, playback=False)
+    cam = camera.Camera(index=0)
+    cam.track_always = True
+    cam._file_fps = None
+    cam.ready.set()
+    monkeypatch.setattr(cam, '_open', lambda: cap)
+    def fail(*args):
+        raise RuntimeError('simulated component failure')
+    monkeypatch.setattr(camera, 'FaceTracker', fail if failure == 'tracker' else
+                        lambda: SimpleNamespace(detect=fail if failure == 'detect' else lambda *args: None))
+    if failure == 'read':
+        cap.read = fail
+    cam._run()
+    assert cap.released and cam._cap is None and not cam.ready.is_set()
+    assert cam.error == 'simulated component failure'
+    # A subsequent start can acquire a fresh capture rather than retain a leaked handle.
+    replacement = FakeCapture(clock, playback=False)
+    cam._tracker = SimpleNamespace(detect=lambda *args: None)
+    monkeypatch.setattr(cam, '_open', lambda: replacement)
+    cam.on_frame = lambda *args: cam._stop.set()
+    cam._run()
+    assert replacement.released and cam.error is None
+
+
 @pytest.mark.parametrize("playback", [False, True])
 def test_camera_and_microphone_share_monotonic_clock_during_wall_clock_step(monkeypatch, playback):
     clock = SimulatedClock()

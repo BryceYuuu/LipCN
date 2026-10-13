@@ -34,7 +34,8 @@ class Widget:
 
 @pytest.fixture
 def controller(tmp_path, monkeypatch):
-    wanted = {'_infer', '_inferred', '_infer_error', '_discarded', '_status'}
+    wanted = {'_infer', '_inferred', '_infer_error', '_discarded', '_status', '_uses_speech',
+              '_first_inferred', '_present_variants', '_choice_text', '_refresh_choices'}
     parsed = ast.parse(SOURCE.read_text(encoding='utf-8'))
     cls = next(node for node in parsed.body if isinstance(node, ast.ClassDef) and node.name == 'LiveTest')
     methods = [node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
@@ -55,6 +56,8 @@ def controller(tmp_path, monkeypatch):
     obj.closed = False
     obj.loading = False
     obj.processing = True
+    obj.processing_token = 3
+    obj.result_variants = []
     obj.recording = False
     obj.completed = 0
     obj.last_latency = None
@@ -62,9 +65,11 @@ def controller(tmp_path, monkeypatch):
     obj.last_status_write = None
     obj.error = None
     obj.result = Widget()
+    obj.state_label = SimpleNamespace(setStringValue_=lambda text: None)
     obj.cancel_button = Widget()
     obj.choice_buttons = []
     obj.reader = SimpleNamespace(encode=Mock(return_value='encoded'))
+    obj._ensure_visual = Mock(side_effect=lambda language: obj.reader)
     obj.model_seconds = 1.0
     obj.adapter_sha256 = '0' * 64
     obj.camera = None
@@ -79,6 +84,7 @@ def controller(tmp_path, monkeypatch):
         accepted=False, text='', reason='low_confidence')))
     obj.formatter = SimpleNamespace(format=Mock(return_value=SimpleNamespace(
         raw=PRIVATE_TEXT, variants=[SimpleNamespace(label='原意', text=PRIVATE_TEXT + '。', note='')], warnings=[])))
+    obj.formatter.initial = Mock(return_value=obj.formatter.format.return_value)
     backend = ModuleType('evaluate_cnvsrc')
     backend.configured_hypotheses = Mock(return_value=([SimpleNamespace(text='口型原始内容')], None))
     monkeypatch.setitem(sys.modules, 'evaluate_cnvsrc', backend)
