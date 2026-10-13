@@ -13,11 +13,11 @@ LipCN focuses on Mandarin input and also integrates the original English lip-rea
 | 中文 | English |
 | --- | --- |
 | **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output for display, copy and insertion; English uses the original visual model with camera-only capture. |
-| **两种输入方式**：语音优先使用本地 Whisper 并按需回退口型；纯口型模式只用摄像头，不申请或打开麦克风。 | **Two input modes:** speech-first uses local Whisper with visual fallback on demand; lip-only uses the camera without requesting or opening the microphone. |
+| **两种输入方式**：每次启动默认纯口型，只用摄像头，不申请或打开麦克风；会话内可切换语音优先，使用本地 Whisper 并按需回退口型。 | **Two input modes:** every launch starts in Lip only, using the camera without requesting or opening the microphone. Switch to Speech first for the current session to use local Whisper with visual fallback on demand. |
 | **先出结果、直接修改**：方案一先显示并开放复制/输入，再补充方案二、三；三个文本框可编辑，后续生成保留你的修改。 | **Early, editable results:** Option 1 is usable before Options 2 and 3 finish. Edit any available option before copying or inserting; later generation preserves your edits. |
 | **快速文字整理**：默认用保守规则补标点、整理有限口语词和填充词，检查数字、时间、否定等改动；无需等待大模型润色，允许方案重复。 | **Fast wording cleanup:** conservative rules handle punctuation, limited register changes and fillers, while checking numbers, time references and negation. No wording-model wait by default; options may repeat. |
 | **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
-| **识别期间实时预览**：结束本句后画面继续流动，并显示处理进度；识别完成、取消或隐藏窗口即关闭摄像头。录制最长 20 秒。 | **Live preview during recognition:** ending an utterance keeps the preview moving with a progress indicator. Completion, cancellation or hiding closes the camera. Recording is capped at 20 seconds. |
+| **持续实时预览**：应用启动即开启摄像头预览，识别完成或取消后继续显示；摄像头保持开启直到退出应用。单句录制最长 20 秒，画面不保存。 | **Continuous live preview:** the camera starts with the app and keeps previewing after recognition or cancellation. It remains open until the app exits. Each utterance is capped at 20 seconds; frames are not saved. |
 | **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
 | **按需加载与失败恢复**：先准备当前输入方式需要的识别器；其余模型按需加载。语言切换先检查文件，失败时恢复原选择，并可重试。 | **On-demand loading and recovery:** prepare the selected recognizer first; load other models only when needed. Language switches check assets before replacing a model and restore the previous selection on failure, with retry available. |
 
@@ -58,13 +58,17 @@ python3.12 -m venv .venv
 .venv/bin/lipcn
 ```
 
-1. 选择语言与输入方式；每次启动默认简体中文，输入方式会记住上次选择。 / Choose a language and input mode. Each launch starts in Simplified Chinese; the input-mode preference is remembered.
+上面的命令准备语音模型；只安装这些资源时，请启动后切换“语音优先”。默认中文纯口型所需的视觉模型与兼容 adapter 见桌面安装说明。
+
+The commands above prepare speech assets. If those are the only models installed, select Speech first after launch. See desktop setup for the visual models and compatible adapter required by the default Mandarin Lip only mode.
+
+1. 允许摄像头预览，选择语言与输入方式；每次启动默认简体中文、纯口型。语音优先仅对当前会话有效，重启恢复纯口型。 / Allow camera preview and choose a language and input mode. Every launch starts in Simplified Chinese and Lip only. Speech first lasts only for the current session; restarting returns to Lip only.
 2. 点击“开始说一句”，说话或自然默念，再点击“结束并识别”。 / Click Start, speak or silently mouth a sentence, then finish.
 3. 方案一出现即可修改、复制或输入；后续两个方案准备好后自动显示。 / Edit, copy or insert Option 1 as soon as it appears; the other options follow.
 
-只有主动开始才采集；点击结束后停止本句录音和识别帧收集，仅继续实时预览，直到结果完成。取消、隐藏、最小化或关闭立即请求停止摄像头，后续预览帧不送入识别、不保存。纯口型及 English 不打开麦克风。输入原应用需要辅助功能权限。简繁切换共用中文模型；English 识别英文口型，不做翻译。
+应用启动时即开启摄像头预览，只有主动开始才收集本句用于识别的画面；语音优先还会在此时录音。结束、识别完成或取消均保留预览；隐藏或最小化停止本句采集并丢弃待返回结果，但摄像头继续开启，退出应用才关闭。预览画面不送入识别、不保存。纯口型及 English 不打开麦克风。输入原应用需要辅助功能权限。简繁切换共用中文模型；English 识别英文口型，不做翻译。
 
-Capture starts only on request. Finish stops utterance audio and recognition-frame collection while live preview continues until results are complete. Cancel, hide, minimize and close immediately request camera shutdown. Later preview frames are neither recognized nor saved. Lip-only and English never open the microphone. Insertion requires Accessibility permission. Both Chinese scripts share the Mandarin model; English reads English lips without translation.
+Camera preview starts with the app. Start explicitly collects frames for the current recognition and, in Speech first, records audio. Finish, completion and cancellation keep the preview open. Hiding or minimizing stops utterance capture and discards pending results while the camera remains open; exiting the app closes it. Preview frames are neither recognized nor saved. Lip only and English never open the microphone. Insertion requires Accessibility permission. Both Chinese scripts share the Mandarin model; English reads English lips without translation.
 
 中文纯口型需要另行准备兼容的研究 adapter；仓库与通用安装包不分发私人权重。缺少该组件时仍可使用已准备好的中文语音输入和英文口型。安装不会把研究模型变成不受限制的商用模型。
 
@@ -82,9 +86,9 @@ Mandarin visual recognition requires a compatible research adapter, distributed 
 
 ## 性能与验证 / Performance and validation
 
-当前源码默认快速整理三个方案，不加载 MLX 表达模型；识别模型和解码参数保持不变。纯规则短句实测首调用约 **0.2–25 毫秒**（含首次简繁转换初始化），只代表文字整理。需要原有模型润色时，以 `LIPCN_WORDING_MODE=model lipcn` 启动。中文纯口型建议选择“纯口型”，提前准备视觉模型；语音优先首次回退口型仍需要加载模型。详见[预览与等待时间修复记录](docs/validation/live-preview-fix.md)。
+当前源码默认快速整理三个方案，不加载 MLX 表达模型；识别模型和解码参数保持不变。纯规则短句实测首调用约 **0.2–25 毫秒**（含首次简繁转换初始化），只代表文字整理。需要原有模型润色时，以 `LIPCN_WORDING_MODE=model lipcn` 启动。默认纯口型会在启动时准备视觉模型；会话内切换语音优先时，语音模型按需加载。详见[预览与等待时间修复记录](docs/validation/live-preview-fix.md)。
 
-The current source defaults to fast rule-based options without loading MLX. Recognition weights and decoding settings are unchanged. First-call formatting of short synthetic phrases took roughly **0.2–25 ms**, including script-conversion initialization; this excludes recognition. Opt into the previous model-backed cleanup with `LIPCN_WORDING_MODE=model lipcn`. Select Lip only for silent use so the visual recognizer is prepared before recording; the first visual fallback in Speech first still has a loading cost.
+The current source defaults to fast rule-based options without loading MLX. Recognition weights and decoding settings are unchanged. First-call formatting of short synthetic phrases took roughly **0.2–25 ms**, including script-conversion initialization; this excludes recognition. Opt into the previous model-backed cleanup with `LIPCN_WORDING_MODE=model lipcn`. The default Lip only mode prepares the visual recognizer at startup; switching to Speech first loads ASR on demand during that session.
 
 此前 2.3.0 发布包将“识别完成后的第一条可用结果”和“后续文字整理”分开：第一条不加载表达模型。真实本机文字整理测试中，四条合成测试句的第一条准备耗时为 **0.02–15.14 毫秒**；全部三个方案为 **0.57–9.40 秒**（首条含表达模型冷加载）。这些数字只衡量文字整理，不含录制、语音/口型识别，不能作为整句端到端速度承诺。
 

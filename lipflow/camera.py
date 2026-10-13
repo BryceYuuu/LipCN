@@ -20,6 +20,8 @@ import numpy as np
 from .face import FaceObs, FaceTracker
 from .paths import LINUX, WHO, WINDOWS
 
+READ_FAILURE_SECONDS = 3.0
+
 
 @dataclass
 class Recording:
@@ -179,6 +181,7 @@ class Camera:
                 self._tracker = FaceTracker()
             self.error = None
             t0 = time.monotonic()
+            last_valid_frame = t0
             warm = n_read = 0
             last_detection = float('-inf')
             preview_obs = None
@@ -188,9 +191,16 @@ class Camera:
                     n_read += 1
                     time.sleep(max(0.0, t0 + n_read / self._file_fps - time.monotonic()))
                 now = time.monotonic()
-                if not ok:
+                if not ok or frame is None or frame.size == 0:
+                    if self._file_fps:
+                        break  # File EOF is terminal; never spin on an exhausted video.
+                    # Only a returned read failure can be bounded here. A native
+                    # cap.read() that never returns still needs driver recovery.
+                    if now - last_valid_frame >= READ_FAILURE_SECONDS:
+                        raise RuntimeError('Camera returned no valid frames for 3 seconds')
                     time.sleep(0.01)
                     continue
+                last_valid_frame = now
                 warm += 1
                 if warm == 3:  # first frames are often black while exposure settles
                     self.ready.set()

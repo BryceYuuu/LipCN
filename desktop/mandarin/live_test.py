@@ -46,7 +46,7 @@ from hybrid_hotkey import CommandToggle
 from hybrid_output import OutputTarget
 from english_lips import load_english_reader
 from languages import DEFAULT_LANGUAGE, LANGUAGE_CHOICES, recognition_language
-from input_settings import INPUT_MODES, load_input_mode, save_input_mode
+from input_settings import DEFAULT_INPUT_MODE, INPUT_MODES
 from candidate_panel import CandidatePanel
 
 try:
@@ -75,11 +75,15 @@ class LiveTest(NSObject):
         self.reader = None
         self.reader_language = 'zh'
         self.language = DEFAULT_LANGUAGE
-        self.input_mode = load_input_mode(PROFILE)
+        self.input_mode = DEFAULT_INPUT_MODE
         self.pending_previous_language = None
         self.language_switching = False
         self.language_worker = None
         self.camera = None
+        self.camera_token = 0
+        self.preview_active = False
+        self.preview_retry_at = 0.0
+        self.preview_error = None
         self.closed = False
         self.suspended = False
         self.loading = True
@@ -87,7 +91,7 @@ class LiveTest(NSObject):
         self.lip_ready = False
         self.wording_ready = False
         self.startup_complete = False
-        self.startup_stage = '加载语音模型'
+        self.startup_stage = '加载中文口型模型'
         self.startup_started = time.monotonic()
         self.startup_stage_started = self.startup_started
         self.model_executor = None
@@ -187,7 +191,7 @@ class LiveTest(NSObject):
         self.progress.setIndeterminate_(True)
         self.progress.setDisplayedWhenStopped_(False)
         root.addSubview_(self.progress)
-        self.state_label = label(root, '加载语音模型 · 0.0 秒', (52, 311, 919, 28), 17)
+        self.state_label = label(root, '加载中文口型模型 · 0.0 秒', (52, 311, 919, 28), 17)
         self.start_button = NSButton.buttonWithTitle_target_action_('开始说一句', self, 'begin:')
         self.start_button.setFrame_(NSMakeRect(26, 254, 240, 46))
         self.start_button.setFont_(NSFont.boldSystemFontOfSize_(19))
@@ -265,6 +269,8 @@ class LiveTest(NSObject):
         if self.hotkey.start():
             self.hotkey_note = '右 Command：按一下开始，再按结束'
         self._refresh_access()
+        self.preview_active = True
+        self._open_camera()
         self.startup_started = time.monotonic()
         self.startup_stage_started = self.startup_started
         self.model_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix='lipcn-model')
@@ -335,10 +341,6 @@ class LiveTest(NSObject):
             self._refresh_language_control()
             return
         self.input_mode = INPUT_MODES[index][0]
-        try:
-            save_input_mode(PROFILE, self.input_mode)
-        except OSError:
-            pass  # A read-only profile must not prevent using the chosen mode.
         self.audio.cancel()
         if self._uses_speech():
             self._request_microphone()
@@ -629,45 +631,66 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _open_camera(self):
-        if self.closed or self.suspended or self.camera is not None:
+        if (self.closed or self.camera is not None or self.camera_permission_pending
+                or self._cameras_closing()):
             return
+        self.camera_token = getattr(self, 'camera_token', 0) + 1
+        token = self.camera_token
         from AVFoundation import AVCaptureDevice, AVMediaTypeVideo
         status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo)
         if status == 0:
             self.state_label.setStringValue_('请在系统弹窗中允许摄像头权限。')
             self.camera_permission_pending = True
-            token = self.token
             AVCaptureDevice.requestAccessForMediaType_completionHandler_(
                 AVMediaTypeVideo, lambda granted: AppHelper.callAfter(self._camera_permission, bool(granted), token))
             return
         if status != 3:
-            self.error = '请在系统设置 → 隐私与安全性 → 摄像头中允许此应用，再重新打开。'
-            self.result.setString_(self.error)
+            self.preview_error = '请在系统设置 → 隐私与安全性中允许摄像头。'
+            self.preview_retry_at = time.monotonic() + 2.0
             self._status('camera_permission_denied')
             return
+        self.preview_error = None
         self.face_present = False
         self.last_frame_at = 0
-        token = self.token
         self.camera = Camera(os.environ.get('LIPCN_CAMERA', 'auto'), on_frame=
                              lambda frame, observation, recording:
                              self._camera_frame(frame, observation, recording, token))
         self.camera.track_always = True
+        self.camera.preview_tracking_interval = 1.0 if self.suspended else 1 / 12
         self.camera.ensure_open()
 
     @objc.python_method
     def _camera_permission(self, granted, token):
-        if token != self.token:
+        if token != self.camera_token:
             return
         self.camera_permission_pending = False
-        if (not self.closed and not self.suspended and granted and token == self.token
-                and (self.pending_begin or self.recording)):
+        if not self.closed and granted:
             self._open_camera()
-            if self.recording and self.camera is not None:
-                self.camera.start_recording()
+        elif not self.closed:
+            self.preview_error = '请在系统设置 → 隐私与安全性中允许摄像头。'
+            self.preview_retry_at = time.monotonic() + 2.0
+
+    @objc.python_method
+    def _preview_tick(self):
+        if self.closed or not getattr(self, 'preview_active', False):
+            return
+        now = time.monotonic()
+        if self.camera is not None and (self.camera.error or not self.camera.is_open):
+            # A device interruption must never splice two captures into one utterance.
+            if self.recording or self.pending_begin:
+                self.cancel_(None)
+            self._close_camera()
+            self.preview_error = '摄像头暂不可用，正在重连…'
+            self.preview_retry_at = now + 2.0
+        if (self.camera is None and now >= getattr(self, 'preview_retry_at', 0.0)
+                and not self.camera_permission_pending and not self._cameras_closing()):
+            self._open_camera()
 
     @objc.python_method
     def _close_camera(self):
         camera, self.camera = self.camera, None
+        self.camera_token = getattr(self, 'camera_token', 0) + 1
+        self.camera_permission_pending = False
         self.face_present = False
         self.ui_frame_pending = False
         self.ui_frame_token = None
@@ -688,12 +711,14 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _camera_frame(self, frame, observation, is_recording, token):
-        if self.closed or self.suspended or self.camera is None or token != self.token:
+        if self.closed or self.camera is None or token != self.camera_token:
             return
         now = time.monotonic()
         self.frames += 1
         self.last_frame_at = now
         self.face_present = observation is not None
+        if self.suspended:
+            return
         if observation is None:
             self.capture_guidance = '请正对镜头，让嘴部完整入镜'
         if self.ui_frame_pending or now - self.last_ui_frame < 1 / 24:
@@ -731,7 +756,7 @@ class LiveTest(NSObject):
     def _draw_frame(self, preview, mouth, token):
         try:
             if (not self.closed and not self.suspended and self.camera is not None
-                    and token == self.token):
+                    and token == self.camera_token):
                 self.video.setImage_(_nsimage(preview))
                 self.mouth.setImage_(_nsimage(mouth))
         finally:
@@ -858,6 +883,7 @@ class LiveTest(NSObject):
     def tick_(self, timer):
         if self.closed:
             return
+        self._preview_tick()
         if not self.suspended and (self.processing or self.pending_begin or self.loading):
             self.progress.startAnimation_(None)
         else:
@@ -900,7 +926,7 @@ class LiveTest(NSObject):
             self.state_label.setStringValue_(self.error or '识别模型加载失败，请重新打开。')
             state = 'error'
         elif self._can_begin():
-            self.state_label.setStringValue_('就绪')
+            self.state_label.setStringValue_(getattr(self, 'preview_error', None) or '就绪')
             state = 'ready'
         else:
             self.state_label.setStringValue_('请允许麦克风后开始。' if self._uses_speech()
@@ -920,7 +946,6 @@ class LiveTest(NSObject):
         self.result_variants = []
         self._refresh_choices()
         self._refresh_language_control()
-        self.camera_permission_pending = False
         if sender is not None:
             try:
                 self.output_target.capture()
@@ -943,14 +968,16 @@ class LiveTest(NSObject):
             return
         self.pending_begin = False
         self.record_started = time.monotonic()
-        if self.camera is not None:
+        camera_ready = (self.camera is not None and self.camera.is_open
+                        and self.camera.ready.is_set() and not self.camera.error)
+        if camera_ready:
+            self.camera.preview_tracking_interval = 0.0
             self.camera.start_recording()
         if self.microphone_allowed and self._uses_speech():
             if not self.audio.start():
                 self.microphone_note = '麦克风不可用，本句转为唇语'
                 self._refresh_access()
-        if not self.audio.capturing and (self.camera is None or self.camera.error):
-            self._close_camera()
+        if not self.audio.capturing and not camera_ready:
             self.recording = False
             self.cancel_button.setEnabled_(False)
             self.result.setString_(
@@ -1001,7 +1028,7 @@ class LiveTest(NSObject):
         self.recording = False
         self.stop_button.setEnabled_(False)
         # End the utterance, not the preview. No further frames/audio enter this
-        # recording; the visible camera stays live until completion or cancellation.
+        # recording; live preview belongs to the app, not to this utterance.
         # A busy UI may deliver its timer late. Keep inference input within the cap.
         if rec is not None:
             count = sum(timestamp <= rec.started + MAX_SECONDS for timestamp in rec.ts)
@@ -1132,8 +1159,6 @@ class LiveTest(NSObject):
     def _discarded(self, token):
         if token == getattr(self, 'processing_token', token):
             self.processing = False
-            if token == self.token:
-                self._close_camera()
 
     @objc.python_method
     def _choice_text(self, index):
@@ -1228,15 +1253,14 @@ class LiveTest(NSObject):
         self.token += 1
         self.pending_stop = None
         self.pending_begin = False
-        self.camera_permission_pending = False
         self.audio.cancel()
         self.result_variants = []
         for b in self.choice_buttons:
             b.setEnabled_(False)
         if self.camera is not None:
             self.camera.stop_recording()
+            self.camera.preview_tracking_interval = 1.0 if self.suspended else 1 / 12
         self.recording = False
-        self._close_camera()
         self.stop_button.setEnabled_(False)
         self.cancel_button.setEnabled_(False)
         self.result.setString_('本句已取消。' + ('正在等待当前计算结束…' if self.processing else '可以重新开始。'))
@@ -1248,15 +1272,17 @@ class LiveTest(NSObject):
             return
         self.cancel_(None)
         self.suspended = True
-        self._close_camera()
-        self.video.setImage_(None)
-        self.mouth.setImage_(None)
+        if self.camera is not None:
+            self.camera.preview_tracking_interval = 1.0
         self._status('paused')
 
     @objc.python_method
     def _resume(self):
         if not self.closed and self.suspended:
             self.suspended = False
+            if self.camera is not None:
+                self.camera.preview_tracking_interval = 1 / 12
+            self._preview_tick()
 
     def windowDidMiniaturize_(self, note):
         self._suspend()
@@ -1393,6 +1419,7 @@ class LiveTest(NSObject):
         if self.closed:
             return
         self.closed = True
+        self.preview_active = False
         self.token += 1
         self.pending_stop = None
         self.pending_begin = False
@@ -1427,6 +1454,7 @@ class LiveTest(NSObject):
                 'language_switching': getattr(self, 'language_switching', False),
                 'window_visible': bool(self.window.isVisible()), 'window_minimized': bool(self.window.isMiniaturized()), 'model_loaded': self.reader is not None, 'model_load_seconds': self.model_seconds,
                 'adapter_sha256': self.adapter_sha256, 'camera_open': bool(self.camera and self.camera.is_open),
+                'camera_error': bool(getattr(self, 'preview_error', None)),
                 'camera_frames_seen': self.frames, 'face_present': self.face_present,
                 'ready_to_record': self._can_begin(), 'recording': self.recording,
                 'processing': self.processing, 'completed_utterances': self.completed,
@@ -1449,7 +1477,7 @@ class LiveTest(NSObject):
                 'beam_size': 4 if getattr(self, 'reader_language', 'zh') == 'en' else 40,
                 'ctc_weight': .1,
                 'reverse_weight': None if getattr(self, 'reader_language', 'zh') == 'en' else .3,
-                'build': '2026-10-13-live-preview', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
+                'build': '2026-10-13-continuous-camera', 'tail_seconds': TAIL_SECONDS, 'max_utterance_seconds': MAX_SECONDS,
                 'microphone_authorized': self.microphone_allowed, 'last_route': self.last_route,
                 'hotkey_listening': bool(self.hotkey and self.hotkey.is_listening),
                 'microphone_capturing': self.audio.capturing,

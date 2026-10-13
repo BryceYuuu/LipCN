@@ -235,6 +235,81 @@ def test_idle_camera_closes_after_elapsed_time_even_if_wall_clock_steps(monkeypa
     assert clock.wall_calls == 0
 
 
+class ScriptedCapture:
+    def __init__(self, clock, steps):
+        self.clock, self.steps = clock, iter(steps)
+        self.read_count, self.released = 0, False
+
+    def read(self):
+        try:
+            elapsed, ok, frame = next(self.steps)
+        except StopIteration:
+            pytest.fail('Capture should have stopped before another read')
+        self.clock.now += elapsed
+        self.read_count += 1
+        return ok, frame
+
+    def release(self):
+        self.released = True
+
+
+def scripted_camera(monkeypatch, clock, steps, *, playback=False):
+    monkeypatch.setattr(camera, 'time', clock)
+    cap = ScriptedCapture(clock, steps)
+    cam = camera.Camera(index=0)
+    cam.track_always = True
+    cam._file_fps = 25 if playback else None
+    closed = []
+    cam._tracker = SimpleNamespace(detect=lambda *args: None, close=lambda: closed.append('tracker'))
+    monkeypatch.setattr(cam, '_open', lambda: cap)
+    return cam, cap, closed
+
+
+@pytest.mark.parametrize('ok,frame', [(False, None), (True, None), (True, np.zeros((0, 0, 3), np.uint8))])
+def test_initial_invalid_camera_reads_stop_after_finite_elapsed_time(monkeypatch, ok, frame):
+    clock = SimulatedClock()
+    cam, cap, closed = scripted_camera(monkeypatch, clock, [(1., ok, frame)] * 3)
+    cam.ready.set()  # Even stale readiness must be cleared on failure.
+    cam.on_frame = lambda *args: pytest.fail('Invalid images must not enter preview or recording')
+    cam._run()
+    assert cap.read_count == 3 and cap.released
+    assert 'no valid frames for 3 seconds' in cam.error
+    assert cam._cap is None and cam._tracker is None and not cam.ready.is_set()
+    assert closed == ['tracker'] and clock.wall_calls == 0
+
+
+def test_valid_camera_read_resets_timeout_and_preserves_recorded_frames(monkeypatch):
+    clock = SimulatedClock()
+    frame = np.zeros((8, 8, 3), np.uint8)
+    good = (.04, True, frame)
+    steps = [good] * 3 + [(1.5, False, None), good, (1.5, False, None), good,
+                          (1.6, False, None), (1.6, False, None)]
+    cam, cap, closed = scripted_camera(monkeypatch, clock, steps)
+    cam._rec = camera.Recording(started=clock.monotonic())
+    rec = cam.recording
+    delivered = []
+    cam.on_frame = lambda *args: delivered.append(cap.read_count)
+    cam._run()
+    assert delivered == [1, 2, 3, 5, 7]
+    assert rec.ts == pytest.approx([10.12, 11.67, 13.22])
+    assert len(rec.grays) == len(rec.anchors) == len(rec.mouth_open) == len(rec.mouth_pixels) == 3
+    assert cap.read_count == 9 and cap.released and closed == ['tracker']
+    assert 'no valid frames' in cam.error and not cam.ready.is_set()
+
+
+def test_file_eof_stops_immediately_without_camera_retry_error(monkeypatch):
+    clock = SimulatedClock()
+    frame = np.zeros((8, 8, 3), np.uint8)
+    cam, cap, closed = scripted_camera(monkeypatch, clock,
+        [(0., True, frame)] * 3 + [(0., False, None)], playback=True)
+    delivered = []
+    cam.on_frame = lambda *args: delivered.append(cap.read_count)
+    cam._run()
+    assert delivered == [1, 2, 3] and cap.read_count == 4
+    assert cam.error is None and cap.released and closed == ['tracker']
+    assert not cam.ready.is_set() and clock.now < 10.2
+
+
 def test_reported_recognition_duration_uses_elapsed_time(monkeypatch):
     from lipflow import vsr
 

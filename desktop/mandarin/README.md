@@ -1,8 +1,8 @@
 # LipCN · 中文桌面运行说明 / Mandarin desktop setup
 
-本目录是当前桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，提供中文语音优先、英文口型识别、简繁输出、三个表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
+本目录是当前桌面入口。它复用仓库内的 `lipflow/` 和 `research/` 组件，默认纯口型，提供会话内可选的中文语音优先、英文口型识别、简繁输出、三个表达方案、右 Command 切换和分阶段启动。内部 Python 包名保留兼容性；项目与窗口名称为 **LipCN**。
 
-This is the current desktop entry. It uses components from `lipflow/` and `research/`, providing Mandarin speech-first recognition, English lip reading, simplified/traditional output, three wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
+This is the current desktop entry. It uses components from `lipflow/` and `research/`, defaulting to Lip only with optional Mandarin Speech first for the current session, English lip reading, simplified/traditional output, three wording options, a Right Command toggle and staged startup. Internal Python package names remain compatible; the project and window are named **LipCN**.
 
 ## 1. 环境 / Environment
 
@@ -39,9 +39,9 @@ Startup does not download models. Read each source’s terms, then put the asset
 | 英文口型 / English visual model | `~/.cache/lipcn/models/english/vsr/` | [LRS3_V_WER19.1](https://huggingface.co/Amanvir/LRS3_V_WER19.1), revision `c0b413f56b164565865a63f00774ee55a9738cc5`; `model.json` 与 / and `model.pth` |
 | 英文解码语言模型 / English decoding language model | `~/.cache/lipcn/models/english/lm/` | [lm_en_subword](https://huggingface.co/Amanvir/lm_en_subword), revision `f4e39b6d0904b2a900c53a2fff0377796c797bdc`; `model.json` 与 / and `model.pth` |
 
-只准备语音模型也可以使用语音输入；缺少口型基座、词表或兼容适配参数时，口型回退不可用。默认快速文字整理不使用表达模型，三个方案可能重复；原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
+只准备语音模型时，启动后需手动切换“语音优先”使用语音输入；缺少口型基座、词表或兼容适配参数时，默认纯口型及口型回退不可用。默认快速文字整理不使用表达模型，三个方案可能重复；原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
 
-Speech input can work with just the ASR model. Lip fallback is unavailable without the visual checkpoint, vocabulary and compatible adapter. Fast formatting is the default, does not load the wording model, and may repeat options. Enable the previous MLX cleanup with `LIPCN_WORDING_MODE=model`. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
+With only the ASR model prepared, switch to Speech first after launch to use speech input. The default Lip only mode and visual fallback are unavailable without the visual checkpoint, vocabulary and compatible adapter. Fast formatting is the default, does not load the wording model, and may repeat options. Enable the previous MLX cleanup with `LIPCN_WORDING_MODE=model`. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
 
 推荐统一检查和准备模型： / Use the unified checks and model setup:
 
@@ -106,13 +106,13 @@ Keep models, recordings, videos, runtime state, personal profiles and `.env` fil
 ## 4. 使用与验证 / Use and verification
 
 - 右上角语言选择提供“简体中文”“繁體中文”“English”，每次启动默认简体中文。简繁共用中文识别，只转换最终结果字形；复制和输入保持所选字形。 / The top-right language selector offers Simplified Chinese, Traditional Chinese and English, defaulting to Simplified Chinese on each launch. Chinese modes share one recognizer; final output, copy and insertion use the selected writing system.
-- 输入方式提供“语音优先”和“纯口型”，记住上次选择；纯口型不请求麦克风权限，也不调用语音识别。 / Input mode offers Speech first and Lip only, remembers the choice, and never requests microphone permission or runs ASR in Lip only.
+- 每次启动默认“纯口型”，忽略旧的输入模式偏好；可在当前会话切换“语音优先”，重启后恢复纯口型。输入方式不写入配置。纯口型不请求麦克风权限，也不调用语音识别。 / Every launch starts in Lip only, ignoring old input-mode preferences. Speech first can be selected for the current session; restarting returns to Lip only. Input-mode choices are not persisted. Lip only never requests microphone permission or runs ASR.
 - 方案一先显示，其余方案随后补齐；可在文本框直接修改，复制和输入使用修改后的内容，后续生成不覆盖已编辑文本。 / Option 1 appears first. Edit available text directly; copy and insertion use your edits, which later generation preserves.
 - English 只使用摄像头和英文口型模型，不启动麦克风、不使用中文语音识别，也不翻译。 / English uses only the camera and English visual model, without microphone capture, Mandarin ASR or translation.
 - 简繁切换无需重载模型。中英文切换先检查目标文件，加载失败时恢复原选择并尝试恢复原模型；可点击“重试加载”。加载、采集与识别时不可切换。 / Chinese script switches reuse one model. Visual language switches check target files first; failures restore the prior selection and attempt to restore its model. Retry is available; selection is disabled during loading, capture or inference.
 - 点击开始，或允许输入监控权限后按右 Command；再次按下结束，Esc 取消。 / Click Start, or use Right Command after allowing Input Monitoring; press again to finish, Esc to cancel.
-- 摄像头和麦克风仅在开始后采集；复制/输入必须由用户选择。 / Capture starts only on request; copying and insertion require an explicit choice.
-- 结束本句后停止录音和识别帧收集；摄像头仅作实时预览，直到结果完成。取消、隐藏、最小化或关闭会请求停止并清空画面。预览期间降低脸部跟踪频率，录制本句仍逐帧跟踪。 / Finish ends utterance audio and recognition-frame collection; the camera continues live preview until results complete. Cancel, hide, minimize or close requests shutdown and clears the images. Preview-only tracking is throttled; recording still tracks every frame.
+- 启动时即开启摄像头预览；只有主动开始才收集本句识别帧，语音优先同时录音。复制/输入必须由用户选择。 / Camera preview starts with the app. Start explicitly collects frames for the current recognition and records audio in Speech first. Copying and insertion require an explicit choice.
+- 结束本句后停止录音和识别帧收集；识别完成或取消均保留预览。隐藏或最小化停止本句采集并丢弃待返回结果，摄像头继续开启，退出应用才关闭。预览画面不保存、不送入识别；预览期间降低脸部跟踪频率，录制本句仍逐帧跟踪。 / Finish ends utterance audio and recognition-frame collection; recognition completion and cancellation keep the preview open. Hiding or minimizing stops utterance capture and discards pending results while leaving the camera open; exiting the app closes it. Preview frames are neither saved nor recognized. Preview-only tracking is throttled; recording still tracks every frame.
 - 从终端启动时，macOS 权限可能显示为终端或 Python；按系统设置中的实际名称授权。 / When launched from a terminal, macOS may assign permissions to that terminal or Python; use the identity shown in System Settings.
 - 启动只准备当前方式需要的识别器，备用口型与表达模型按需加载，避免在第一句前排队。 / Startup prepares the selected recognizer; fallback visual and wording models load only on demand, avoiding optional initialization ahead of the first sentence.
 - 本版本不自动读取历史句子、不自动训练，也不自动把文字提交到其他应用。 / This entry does not automatically read sentence history, train on the user, or submit text in other apps.

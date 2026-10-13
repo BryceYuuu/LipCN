@@ -169,6 +169,7 @@ class Harness:
 
         def camera_factory(*args, **kwargs):
             camera = FakeCamera(self)
+            camera.on_frame = kwargs.get('on_frame')
             self.cameras.append(camera)
             return camera
 
@@ -221,7 +222,9 @@ class Harness:
             language_popup=Widget(), language_worker=None,
             reader=object(), camera=None, closed=False, suspended=False, loading=False,
             processing=False, recording=False, pending_stop=None, pending_begin=False,
-            camera_permission_pending=False,
+            camera_permission_pending=False, camera_token=0, preview_active=False,
+            preview_error=None, preview_retry_at=0.0, closing_cameras=[],
+            ui_frame_pending=False, ui_frame_token=None, last_ui_frame=0.0,
             capture_guidance='', token=0, frames=0, face_present=False, last_frame_at=0,
             last_status_write=0, completed=0, error=None, model_failed=False,
             microphone_allowed=True, microphone_note='语音优先已启用', hotkey_note='',
@@ -340,7 +343,8 @@ def test_cancel_invalidates_pending_tail_and_discards_audio(h):
     finish(*args)
     assert not h.ui.recording and h.ui.pending_stop is None
     assert h.ui.audio.cancels == 1
-    assert h.ui.camera is None
+    assert h.ui.camera is h.cameras[0] and h.ui.camera.is_open
+    assert h.ui.camera.recording is None and h.ui.camera.close_count == 0
     assert not h.executor.tasks
 
 
@@ -397,13 +401,15 @@ def test_shortcut_does_nothing_while_closed_or_processing(h, blocked):
     assert h.captures == 0 and not h.cameras
 
 
-def test_suspend_cancels_input_and_closes_devices_but_keeps_hotkey(h):
+def test_suspend_cancels_input_but_keeps_camera_and_hotkey(h):
     h.begin_ready()
     h.ui._suspend()
-    assert h.ui.suspended and not h.ui.recording and h.ui.camera is None
+    assert h.ui.suspended and not h.ui.recording
+    assert h.ui.camera is h.cameras[0] and h.ui.camera.is_open
+    assert h.ui.camera.recording is None and h.ui.camera.close_count == 0
+    assert h.ui.camera.preview_tracking_interval == 1.0
     assert not h.ui.audio.capturing
     assert h.hotkey_stops == 0
-    assert h.ui.video.images[-1] is None
 
 
 def test_shutdown_is_idempotent_stops_input_monitor_and_invalidates_tail(h):
@@ -443,14 +449,15 @@ def test_second_command_during_preparation_cancels_without_another_open(h):
     assert h.ui.pending_begin
     h.ui._toggle_command()
     assert not h.ui.pending_begin and not h.ui.recording
-    assert len(h.cameras) == 1 and h.ui.camera is None
+    assert len(h.cameras) == 1 and h.ui.camera is h.cameras[0]
+    assert h.ui.camera.is_open and h.ui.camera.recording is None
     for _, callback, args in list(h.later):
         callback(*args)
     assert h.ui.audio.starts == 0
 
 
 @pytest.mark.parametrize('cancel_action', ['cancel_', '_suspend', '_shutdown'])
-def test_late_camera_permission_after_cancellation_cannot_reopen_camera(h, cancel_action):
+def test_late_camera_permission_only_restores_preview_unless_app_is_closed(h, cancel_action):
     h.camera_permission = 0
     h.ui.begin_(None)
     assert h.ui.pending_begin and h.permission_requests
@@ -459,7 +466,13 @@ def test_late_camera_permission_after_cancellation_cannot_reopen_camera(h, cance
     else:
         getattr(h.ui, cancel_action)()
     h.grant_camera()
-    assert not h.cameras and not h.ui.recording and h.ui.camera is None
+    assert not h.ui.recording
+    if cancel_action == '_shutdown':
+        assert not h.cameras and h.ui.camera is None
+    else:
+        assert len(h.cameras) == 1 and h.ui.camera is h.cameras[0]
+        assert h.ui.camera.is_open and h.ui.camera.recording is None
+        assert h.ui.camera.start_count == 0
     for _, callback, args in list(h.later):
         callback(*args)
     assert h.ui.audio.starts == 0
@@ -492,10 +505,12 @@ def test_escape_during_preparation_cancels_delayed_begin(h):
     assert not h.ui.recording and h.ui.audio.starts == 0
 
 
-def test_escape_during_capture_closes_devices(h):
+def test_escape_during_capture_stops_sentence_but_keeps_preview(h):
     h.begin_ready()
     h.ui._escape()
-    assert not h.ui.recording and not h.ui.audio.capturing and h.ui.camera is None
+    assert not h.ui.recording and not h.ui.audio.capturing
+    assert h.ui.camera is h.cameras[0] and h.ui.camera.is_open
+    assert h.ui.camera.recording is None and h.ui.camera.close_count == 0
 
 
 def configure_startup(h, monkeypatch, *, speech=True, lips=True, wording=True,
@@ -581,8 +596,10 @@ def test_hotkey_error_keeps_manual_buttons_usable(h):
 def test_stale_camera_permission_cannot_clear_a_new_waiting_session(h):
     h.camera_permission = 0
     h.ui.begin_(None)
-    old_token = h.ui.token
+    old_token = h.ui.camera_token
     h.ui.cancel_(None)
+    # Only a replaced/closed camera generation invalidates a permission request.
+    h.ui._close_camera()
     h.ui.begin_(None)
     assert h.ui.camera_permission_pending
     h.ui._camera_permission(True, old_token)
@@ -608,15 +625,20 @@ def test_no_authorized_camera_or_microphone_does_not_record_empty_input(h):
     assert h.ui.error or '权限' in h.ui.result.text or '不可用' in h.ui.result.text
 
 
-def test_cancel_clears_permission_wait_before_a_new_authorized_session(h):
+def test_cancel_preserves_one_preview_permission_request_for_the_next_sentence(h):
     h.camera_permission = 0
     h.ui.begin_(None)
     assert h.ui.camera_permission_pending
     h.ui.cancel_(None)
-    assert not h.ui.camera_permission_pending
-    h.camera_permission = 3
-    h.begin_ready()
+    assert h.ui.camera_permission_pending
+    h.ui.begin_(None)
+    assert len(h.permission_requests) == 1
+    h.grant_camera()
+    for _, callback, args in list(h.later):
+        if callback.__name__ == '_begin_when_ready':
+            callback(*args)
     assert not h.ui.pending_begin and h.cameras[0].start_count == 1
+    assert h.ui.recording and h.ui.audio.starts == 1
 
 
 def test_cancelled_processing_blocks_overlap_until_worker_returns(h):

@@ -5,7 +5,7 @@ import numpy as np
 import pytest
 from test_hybrid_ui import h, Widget
 from test_hybrid_routing import controller, recording
-from input_settings import load_input_mode, save_input_mode
+from input_settings import DEFAULT_INPUT_MODE, load_input_mode, save_input_mode
 
 
 def result(*texts):
@@ -160,12 +160,27 @@ def test_pure_lips_never_calls_asr_even_if_audio_supplied(controller):
     assert ui.last_route == 'lips'
 
 
-def test_mode_preferences_round_trip_and_corruption_recovery(tmp_path):
-    assert load_input_mode(tmp_path) == 'speech-first'
-    save_input_mode(tmp_path, 'lip-only')
+def test_input_mode_ignores_old_speech_preference_and_session_choices_never_persist(tmp_path):
+    assert DEFAULT_INPUT_MODE == load_input_mode(tmp_path) == 'lip-only'
+    previous = '{"input_mode":"speech-first"}\n'
+    path = tmp_path / 'input-settings.json'
+    path.write_text(previous)
+    for mode in ('speech-first', 'lip-only'):
+        assert load_input_mode(tmp_path) == 'lip-only'
+        save_input_mode(tmp_path, mode)
+        assert path.read_text() == previous
+    path.write_text('corrupt')
     assert load_input_mode(tmp_path) == 'lip-only'
-    assert 'language' not in (tmp_path / 'input-settings.json').read_text()
-    (tmp_path / 'input-settings.json').write_text('corrupt')
-    assert load_input_mode(tmp_path) == 'speech-first'
     with pytest.raises(ValueError):
         save_input_mode(tmp_path, 'automatic')
+
+
+def test_compatibility_mode_hooks_do_not_access_profile_or_create_files(tmp_path):
+    profile = Mock()
+    profile.__truediv__ = Mock(side_effect=AssertionError('preferences must not be read'))
+    profile.mkdir.side_effect = AssertionError('preferences must not be written')
+    assert load_input_mode(profile) == 'lip-only'
+    save_input_mode(profile, 'speech-first')
+    missing = tmp_path / 'missing-profile'
+    save_input_mode(missing, 'speech-first')
+    assert not missing.exists()
