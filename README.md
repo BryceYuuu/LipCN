@@ -118,3 +118,12 @@ The project code retains its [MIT License](LICENSE) and original copyright notic
 感谢 **[Amy Zhou](https://github.com/amywork777)** 创建并开源 **[Lipflow](https://github.com/amywork777/lipflow)**，让这个项目有了起点。也感谢原项目所依赖的研究者与开源贡献者。本仓库在原作基础上独立维护，继续探索中文语音与唇语输入。
 
 Thank you to **[Amy Zhou](https://github.com/amywork777)** for creating and open-sourcing **[Lipflow](https://github.com/amywork777/lipflow)**, the foundation of this project. Thanks also to the researchers and open-source contributors behind its components. This repository is maintained independently and continues exploring Mandarin speech and lip-based input.
+
+## Sponsor / 赞助支持
+
+If this project helps you, consider sponsoring to support ongoing maintenance.
+
+如果这个项目对你有帮助，欢迎赞助支持，让我能持续维护和更新。
+
+- [GitHub Sponsors](https://github.com/sponsors/BryceYuuu): card / PayPal
+- [爱发电 Afdian](https://afdian.com/a/bryce): 微信 / 支付宝 (WeChat Pay / Alipay)
