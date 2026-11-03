@@ -1,134 +1,171 @@
-# LipCN · 本地语音与唇语输入
+# LipCN · 不出声，也能打字 🫦
 
-**支持简体中文、繁體中文和 English，默认简体中文。** 在本机把中文语音或中英文口型转换成文字，口型识别提供最多三个不同候选供选择。由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护。
+> 开会时不方便说话，图书馆里不能出声，深夜怕吵醒家人，嗓子哑了说不出来……
+> 那就对着摄像头**默念**吧。LipCN 看你的嘴型，把你想说的话变成文字。
 
-**Supports Simplified Chinese, Traditional Chinese and English, with Simplified Chinese selected by default.** Turn Mandarin speech or Mandarin/English lip movements into text on your Mac, then choose from up to three distinct lip-reading hypotheses. Developed and maintained by [BryceYuuu](https://github.com/BryceYuuu).
+LipCN 是一个**跑在你自己 Mac 上的中文唇语输入法**。不联网、不上传画面，也不保存你说过的话。它还很年轻，经常认错字，但每天都在变准。这个仓库就是它的成长日记。
 
-LipCN 专注于中文输入，并集成原项目的英文口型识别。体验完整的原版英文应用，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
+由 [BryceYuuu](https://github.com/BryceYuuu) 开发与维护。
 
-LipCN focuses on Mandarin input and also integrates the original English lip-reading model. For the full original English application, check out [Lipflow](https://github.com/amywork777/lipflow) by [Amy Zhou (@amywork777)](https://github.com/amywork777).
+---
 
-## 功能 / Features
+## 先说实话：它现在有多准？
 
-| 中文 | English |
-| --- | --- |
-| **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体，并使用台湾常用词（软件→軟體、视频→影片）；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output and Taiwan terms (軟體, 影片) for display, copy and insertion; English uses the original visual model with camera-only capture. |
-| **两种输入方式**：每次启动默认纯口型，只用摄像头，不申请或打开麦克风；会话内可切换语音优先，使用本地 Whisper 并按需回退口型。 | **Two input modes:** every launch starts in Lip only, using the camera without requesting or opening the microphone. Switch to Speech first for the current session to use local Whisper with visual fallback on demand. |
-| **先出草稿、直接修改**：中文口型编码完成后立即显示草稿方案一，不再等待约 1–5 秒的完整搜索；完整搜索完成后自动替换并补充方案二、三；可用方案可直接编辑，后续结果保留你的修改。 | **Draft first, editable results:** Mandarin lip input shows a draft Option 1 as soon as encoding finishes, without waiting roughly 1–5 s for the full search, which then replaces it and adds Options 2 and 3. Edit any available option; later results preserve your edits. |
-| **不同口型候选**：按模型排序展示最多三个不同识别结果，过滤仅句读、多余空格或字形不同的重复项；不把同一句改写成三个方案，不足三条时留空。 | **Distinct lip-reading hypotheses:** show up to three different model-ranked readings, deduplicating sentence punctuation, redundant spacing and script variants. No paraphrases of a single guess; unavailable choices stay empty. |
-| **语音文字整理**：语音识别仍提供保守的标点、自然表达和精简选项，默认不加载润色模型。 | **Speech wording cleanup:** accepted speech still offers conservative punctuation, natural and concise options without a wording model by default. |
-| **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
-| **持续实时预览**：应用启动即开启摄像头预览，识别完成或取消后继续显示；摄像头保持开启直到退出应用。单句录制最长 20 秒，画面不保存。 | **Continuous live preview:** the camera starts with the app and keeps previewing after recognition or cancellation. It remains open until the app exits. Each utterance is capped at 20 seconds; frames are not saved. |
-| **本机处理**：中文桌面入口不上传录音、画面或识别文字，不保存句子历史，也不读取焦点输入框内容。 | **On-device processing:** the Mandarin desktop entry does not upload audio, frames or recognized text, store sentence history, or read text from the focused field. |
-| **按需加载与失败恢复**：先准备当前输入方式需要的识别器；其余模型按需加载。语言切换先检查文件，失败时恢复原选择，并可重试。 | **On-demand loading and recovery:** prepare the selected recognizer first; load other models only when needed. Language switches check assets before replacing a model and restore the previous selection on failure, with retry available. |
+用我自己的摄像头，默念 39 句日常用语来测试（字错误率越低越好）：
 
-上述功能对应当前 **LipCN 主分支源码**（基于 2.3.0，`desktop/mandarin/`），面向 **Apple Silicon Mac、macOS 14+、Python 3.11–3.12**。中文口型识别仍处于实验阶段，真实无声表达需要逐句核对。
+| | 字错误率 | 完全念对的句子 |
+| --- | --- | --- |
+| 通用模型（训练前） | 59.9% | 0 / 39 |
+| 用我的嘴型训练 1 天之后 | **52.0%** | **2 / 39** |
 
-These features describe the **current LipCN main-branch source**, based on 2.3.0 (`desktop/mandarin/`) for **Apple Silicon Macs, macOS 14+, and Python 3.11–3.12**. Mandarin lip reading remains experimental; review each result, especially for silently mouthed speech.
+模型是看新闻和讲座视频长大的，所以一开始满脑子都是新闻词：
 
-## 界面 / Preview
+| 我默念的 | 训练前它以为是 | 训练 1 天后 |
+| --- | --- | --- |
+| 这本书我已经看完一半了 | 即便中国已经开花一半 | 这本书我已经看完一半了 ✅ |
+| 这个问题我们明天再讨论 | 这个问题我们每天加糖棍 | 这个问题我们明天再讨论 ✅ |
+| 手机快没电了我先挂了 | 周计划被点了管线管 | 手机快没电了我先挂 |
+| 周末要不要一起去看电影 | 这是国家包含基础概念 | 说咱们赶紧去看的 😅 |
 
-![LipCN 2.2.0 语言选择：简体中文、繁體中文、English / Language selector: Simplified Chinese, Traditional Chinese and English](docs/images/language-selector.png)
+只用 20 句训练，错误率就降了将近 8 个百分点。每个人的嘴型差别很大，所以**让模型学你自己的嘴型**，是目前最有效的办法。
 
-*三种语言可选，默认简体中文；简繁共用中文识别，English 使用英文口型模型。*
+## 📈 训练日记
 
-*Three language choices, with Simplified Chinese as the default. Both Chinese writing systems share the Mandarin recognizer; English uses the English visual model.*
+我每天花大约一个小时录自己的嘴型、训练模型。最后能练成什么样，我也不知道，但每天的数字都会如实记在这里。
 
-![LipCN 中文口型测试界面：摄像头预览、嘴部跟踪和识别候选 / Mandarin lip-reading prototype with camera preview, mouth tracking and recognition candidates](docs/images/mandarin-demo.png)
+| 日期 | 累计训练句 | 字错误率 | 完全念对 | 备注 |
+| --- | --- | --- | --- | --- |
+| 2026-11-03 | 0 | 59.9% | 0 / 39 | 起点：通用模型 + 中文语言模型 |
+| 2026-11-03 | 20 | 52.0% | 2 / 39 | 第 1 天，训练 5 轮 |
 
-*上图为早期中文纯口型测试界面；当前版本已加入语音优先，并将结果区精简为三个方案。截图中的单句耗时不代表通用性能。*
+*测试句固定为同一批 39 句，并且始终用和 app 相同的设置来测，所以每天的数字可以直接比较。不过最好的那一轮也是用这 39 句挑出来的，数字会略微偏乐观。*
 
-*The image shows an earlier Mandarin lip-only prototype. The current version adds speech-first recognition and a simpler three-option result area. The timing shown in the screenshot is not a general performance benchmark.*
+## ✨ 它能做什么
 
-## 开始使用 / Getting started
+- **默念就能打字**：只用摄像头，不打开麦克风。
+- **先出草稿，再出精确结果**：念完后零点几秒就先显示一个草稿；完整识别跑完后，自动换成更准的结果。
+- **最多三个候选**：认不准的时候给你几个不同的选项挑，可以直接改，改完一键复制或输入到其他 app。
+- **简体、繁體都支持**：繁體会自动换成台湾常用说法，比如「软件 → 軟體」「视频 → 影片」。也支持英文唇语。
+- **会出声的时候也能用**：切换到「语音优先」，就用本地的 Whisper 语音识别，听不清时再改用唇语。
+- **快捷键**：按一下右 Command 开始，再按一下结束，Esc 取消。
+- **为你量身训练**：录几十句自己的嘴型，一条命令就能训练出你的专属模型，而且只有比原来更准时才会启用。
+
+![LipCN 语言选择：简体中文、繁體中文、English](docs/images/language-selector.png)
+
+![LipCN 早期界面：摄像头预览、嘴部跟踪和识别候选](docs/images/mandarin-demo.png)
+
+*早期界面截图。现在的版本换了新界面：圆角卡片、录制时红框提示、深色模式自动适配。*
+
+## 🚀 五分钟上手
+
+需要 **Apple Silicon 的 Mac**（M1 及以后的芯片），系统 **macOS 14 或更新版本**。
 
 ```bash
 git clone https://github.com/BryceYuuu/LipCN.git
 cd LipCN
+./install.sh                 # 安装依赖 + 下载语音识别模型
+.venv/bin/lipcn              # 启动
 ```
 
-安装依赖后，统一使用 `lipcn` 启动当前桌面窗口。`doctor` 检查环境和模型；`setup` 只有带 `--download` 才联网下载，并校验固定版本与 SHA-256。详细说明见 **[桌面安装与模型准备](desktop/mandarin/README.md)**。
-
-Use `lipcn` to launch the current desktop. `doctor` checks the environment and assets; `setup` downloads only with `--download`, using pinned revisions and SHA-256 verification. See **[desktop setup](desktop/mandarin/README.md)**.
+想用中文唇语，还需要下载公开的唇语模型：
 
 ```bash
-./install.sh          # 依赖 + 语音模型 / dependencies + speech models
-.venv/bin/lipcn
+./install.sh --mode mandarin --accept-research-license
 ```
 
-`install.sh` 用 [uv](https://docs.astral.sh/uv/) 按 `uv.lock` 安装依赖，再执行 `lipcn setup --download`；附加参数会原样传给 `setup`，例如 `./install.sh --mode english --accept-research-license`。约 1 GB 的 MLX 表达模型只用于 `LIPCN_WORDING_MODE=model`，默认不下载、不检查，需要时加 `--with-wording`。根目录的 `setup.sh` 是保留的原版 Lipflow 安装脚本，不用于 LipCN。
+这些模型仅限研究和个人学习使用，不能商用，下载前请先看 [NOTICE](NOTICE)。
 
-`install.sh` installs locked dependencies with [uv](https://docs.astral.sh/uv/), then runs `lipcn setup --download`; extra arguments are passed to `setup`, e.g. `./install.sh --mode english --accept-research-license`. The ~1 GB MLX wording model only serves `LIPCN_WORDING_MODE=model`, so it is skipped unless you add `--with-wording`. The root `setup.sh` is the retained legacy Lipflow installer, not LipCN's.
+**关于 adapter**：中文唇语还需要一个「adapter」，可以理解为一个专门调教过的小插件。我自己用的那个不随仓库发布，所以你要用下面「一起训练」里的方法，**训练一个属于你自己的**。这反而是好事：专属的通常比通用的更准。
 
-上面的命令准备语音模型；只安装这些资源时，请启动后切换“语音优先”。默认中文纯口型所需的视觉模型与兼容 adapter 见桌面安装说明。
+其他命令：
 
-The commands above prepare speech assets. If those are the only models installed, select Speech first after launch. See desktop setup for the visual models and compatible adapter required by the default Mandarin Lip only mode.
+- `lipcn doctor`：检查环境和模型是否齐全，不联网，也不打开摄像头。
+- 详细安装说明见 [桌面安装与模型准备](desktop/mandarin/README.md)。
 
-1. 允许摄像头预览，选择语言与输入方式；每次启动默认简体中文、纯口型。语音优先仅对当前会话有效，重启恢复纯口型。 / Allow camera preview and choose a language and input mode. Every launch starts in Simplified Chinese and Lip only. Speech first lasts only for the current session; restarting returns to Lip only.
-2. 点击“开始说一句”，说话或自然默念，再点击“结束并识别”。 / Click Start, speak or silently mouth a sentence, then finish.
-3. 方案一出现即可修改、复制或输入；口型模式展示最多三条不同候选，缺少的选项留空且不可复制/输入。 / Edit, copy or insert Option 1 as soon as it appears. Lip reading shows up to three distinct hypotheses; missing choices remain empty with copy/insertion disabled.
+## 🏋️ 一起训练
 
-应用启动时即开启摄像头预览，只有主动开始才收集本句用于识别的画面；语音优先还会在此时录音。结束、识别完成或取消均保留预览；隐藏或最小化停止本句采集并丢弃待返回结果，但摄像头继续开启，退出应用才关闭。预览画面不送入识别、不保存。纯口型及 English 不打开麦克风。输入原应用需要辅助功能权限。简繁切换共用中文模型；English 识别英文口型，不做翻译。
+一个人的嘴型能教会模型的东西有限，人越多，我们越能搞清楚什么方法真的有用。欢迎用下面任何一种方式参与：
 
-Camera preview starts with the app. Start explicitly collects frames for the current recognition and, in Speech first, records audio. Finish, completion and cancellation keep the preview open. Hiding or minimizing stops utterance capture and discards pending results while the camera remains open; exiting the app closes it. Preview frames are neither recognized nor saved. Lip only and English never open the microphone. Insertion requires Accessibility permission. Both Chinese scripts share the Mandarin model; English reads English lips without translation.
+### 1. 训练你自己的嘴型（最推荐）
 
-中文纯口型需要另行准备兼容的研究 adapter；仓库与通用安装包不分发私人权重。缺少该组件时仍可使用已准备好的中文语音输入和英文口型。安装不会把研究模型变成不受限制的商用模型。
+整个过程都在你自己的电脑上完成，视频和模型都不会离开你的电脑。
 
-Mandarin visual recognition requires a compatible research adapter, distributed separately. Private weights are absent from the repository and general-purpose package. Prepared Mandarin speech and English visual modes remain usable without it. Model licenses continue to apply.
+```bash
+# ① 录 40 句测试句（约 15 分钟）
+.venv/bin/lipcn collect --speaker me --session dev-$(date +%Y%m%d) --split dev \
+  --lighting indoor-front --prompts research/examples/webcam-baseline-prompts.json
 
-## 项目结构 / Project layout
+# ② 换一天，录训练句（可以分几次录，已经录过的句子会自动跳过）
+.venv/bin/lipcn collect --speaker me --session train-$(date +%Y%m%d) --split train \
+  --output "$HOME/Library/Application Support/LipCN/personal-data" --max-megabytes 2048 \
+  --lighting indoor-front --prompts research/examples/personal-train-prompts.json
 
-| 路径 / Path | 说明 / Description |
+# ③ 一条命令训练（最多 30 分钟），比原来更准才会启用
+research/scripts/train_personal_adapter.sh
+```
+
+录制窗口会用大字显示要念的句子：按空格开始，念完再按空格结束，按 Enter 保存。平时用的时候会出声的话，录制命令后面加上 `--voiced`。
+
+完整步骤见 [个人口型适配](docs/validation/personal-adaptation.md)。
+
+### 2. 分享你的成绩
+
+训练脚本跑完会输出一段「训练成绩」，复制下来，[开一个「训练成绩分享」Issue](https://github.com/BryceYuuu/LipCN/issues/new?template=training-report.md) 贴上就行。
+
+**只贴数字，不要上传视频或带脸的截图。** 不同口音、不同摄像头、不同光线下的数据，能帮我们找出哪些因素影响最大。
+
+### 3. 贡献句子
+
+训练句越贴近日常，模型越懂人话。欢迎提交 PR，往 [`research/examples/`](research/examples/) 里加句子：
+
+- 各地口语，比如台湾、香港、东北、四川的说法；
+- 工作、聊天、点餐等常用场景；
+- 带人名、数字的句子。
+
+用简体书写，避免生僻字。格式参考现有的 `personal-train-prompts.json`。
+
+### 4. 贡献录像？先聊聊
+
+录像里有你的脸，属于很敏感的个人信息，**请不要上传到公开的 Issue 或 PR**。如果你愿意把录像贡献给大家一起训练，请先开 Issue 聊聊，我们会单独约定用途、保存方式和删除方式。
+
+## 🔒 隐私
+
+- 识别全程在本机完成，不上传录音、画面或文字。
+- 不保存你说过的句子，也不读取你正在编辑的文字内容。
+- 只有你主动运行录制工具时，才会把录像保存到本机，用来训练。
+- 默认的唇语模式完全不打开麦克风。
+
+## 🧪 技术细节
+
+- 唇语识别基于 [CNVSRC 2025](https://github.com/liu12366262626/CNVSRC2025) 的中文唇语模型，加上一个 adapter，并在搜索过程中融合 CMLR 中文语言模型。在 40 段公开验证视频上，语言模型让字错误率从 57.2% 降到 55.8%，详见 [语言模型融合实验](docs/validation/lm-fusion.md)。
+- 草稿用的是 CTC 贪心解码，几乎不耗时（约 3 毫秒），字错误率只比完整搜索高约 3 个百分点。
+- 全仓库共 1541 项自动测试通过（另有 24 项跳过）。
+- 研究工具、实验记录和评测方法见 [`research/`](research/README.md)。
+
+| 目录 | 内容 |
 | --- | --- |
-| [`desktop/mandarin/`](desktop/mandarin/) | 当前中文语音与唇语桌面入口 / Current Mandarin speech-and-lip desktop entry |
-| [`lipflow/`](lipflow/) | 共享组件与保留的原有运行入口 / Shared components and retained legacy runtime |
-| [`research/`](research/README.md) | 独立的中文训练、评测与研究报告 / Mandarin training, evaluation and research reports |
-| [`tests/`](tests/), [`desktop/mandarin/tests/`](desktop/mandarin/tests/) | 核心及中文桌面回归测试 / Core and Mandarin desktop regression tests |
-| [旧版英文说明](README.legacy.md) · [旧版中文说明](README.legacy.zh-CN.md) | 原有跨平台入口与设置，其行为和隐私选项与当前中文窗口不同 / Legacy cross-platform entry points with their own behavior and privacy settings |
+| [`desktop/mandarin/`](desktop/mandarin/) | 中文桌面 app |
+| [`research/`](research/README.md) | 训练、评测、录制工具和实验记录 |
+| [`docs/validation/`](docs/validation/) | 各项改进的验证数据 |
+| [`lipflow/`](lipflow/) | 原项目的共享组件，以及保留的旧版入口 |
 
-口型候选是可能的识别结果，不代表已经确认正确；模型分数不是正确率，也不能用于宣称“100% 确定”。候选不足时不会编造其他句子。
+## 📄 许可
 
-Lip hypotheses are possible readings, not confirmed answers. Decoder scores are not correctness probabilities or a claim of 100% certainty. Missing hypotheses are never invented.
+代码采用 [MIT 许可](LICENSE)，并保留原作者的版权声明。模型和数据集有各自的许可，详见 [NOTICE](NOTICE)：CNVSRC、CMLR 等唇语模型仅限研究和个人学习，不能因为代码是 MIT 就拿去商用。本仓库不分发这些模型、adapter 和数据集。
 
-## 性能与验证 / Performance and validation
+## ☕ 赞助支持
 
-当前口型方案直接来自识别模型候选，不加载 MLX 表达模型、不生成改写。中文复用已经重排的 10 条候选，英文读取已有 beam 的最多 4 条，去重后展示前三条；不增加编码或搜索次数。语音输入默认使用快速文字整理。纯规则短句实测首调用约 **0.2–25 毫秒**（含首次简繁转换初始化），只代表文字整理。语音结果需要原有模型润色时，以 `LIPCN_WORDING_MODE=model lipcn` 启动；口型候选不经润色模型。默认纯口型会在启动时准备视觉模型；会话内切换语音优先时，语音模型按需加载。详见[预览与等待时间修复记录](docs/validation/live-preview-fix.md)。
+如果这个项目让你觉得有趣，或者帮到了你，欢迎请我喝杯咖啡，支持我持续训练和更新：
 
-Lip-reading options now come directly from model hypotheses without MLX or paraphrasing. Mandarin reuses the existing 10-candidate reranked pool; English reads up to 4 results from its existing beam. The first three distinct texts are shown without an additional encoding or search pass. Accepted speech defaults to fast rule-based wording. First-call formatting of short synthetic phrases took roughly **0.2–25 ms**, including script-conversion initialization; this excludes recognition. Opt into model-backed cleanup for accepted speech with `LIPCN_WORDING_MODE=model lipcn`; lip hypotheses always bypass it. The default Lip only mode prepares the visual recognizer at startup; switching to Speech first loads ASR on demand during that session.
+- [GitHub Sponsors](https://github.com/sponsors/BryceYuuu)：信用卡 / PayPal
+- [爱发电](https://afdian.com/a/bryce)：微信 / 支付宝
 
-此前 2.3.0 发布包将“识别完成后的第一条可用结果”和“后续文字整理”分开：第一条不加载表达模型。真实本机文字整理测试中，四条合成测试句的第一条准备耗时为 **0.02–15.14 毫秒**；全部三个方案为 **0.57–9.40 秒**（首条含表达模型冷加载）。这些数字只衡量文字整理，不含录制、语音/口型识别，不能作为整句端到端速度承诺。
+## 🙏 致谢
 
-Version 2.3.0 separates the first usable recognition from subsequent wording work. The first option does not load the wording model. On this development Mac, four synthetic-text checks took **0.02–15.14 ms** to prepare Option 1 and **0.57–9.40 s** for all three options, including a cold model load in the first case. These are formatting-only measurements, excluding capture and recognition.
+感谢 [Amy Zhou](https://github.com/amywork777) 创建并开源了 [Lipflow](https://github.com/amywork777/lipflow)，LipCN 就是从它出发的。也感谢 CNVSRC、CMLR、Chinese-LiPS 背后的研究者，以及所有开源贡献者。
 
-中文口型完整搜索可选加入 CMLR 字级语言模型（浅融合）。未参与调参的 40 段验证视频上字错误率由 57.2% 降至 55.8%，完整结果平均慢约 1.7 秒，草稿不受影响，见[语言模型融合](docs/validation/lm-fusion.md)。
+---
 
-The Mandarin full search can add the CMLR character LM (shallow fusion). On 40 untouched held-out clips CER fell from 57.2% to 55.8%; final results take about 1.7 s longer while the draft is unaffected. See [LM fusion](docs/validation/lm-fusion.md).
+LipCN 专注于中文输入，并集成原项目的英文口型识别。体验完整的原版英文应用，欢迎使用原作者 [Amy Zhou（@amywork777）](https://github.com/amywork777) 的 [Lipflow 项目](https://github.com/amywork777/lipflow)。
 
-当前没有经确认的真实无声独立样本，因此本版**不宣称无声中文准确率提高，也没有替换默认权重**。新增独立采集、数据隔离审计，以及替换/删除/插入错误、人名和数字错误报告，见 [真实无声采集与验收](research/SILENT_EVALUATION.md)。采集工具会明确保存你主动录制的本地视频；普通桌面输入仍不保存视频或句子历史。
-
-There are no verified independent silent-speech samples yet, so this version **makes no silent-Mandarin accuracy claim and does not replace the default weights**. New tools support explicit local collection, split-leakage audits and substitution/deletion/insertion, name and number error reports. See [silent collection and evaluation](research/SILENT_EVALUATION.md). The collection tool explicitly saves recordings; ordinary desktop input still stores neither videos nor sentence history.
-
-当前全仓回归 **1,310 项通过、24 项跳过**。自动回归覆盖先显示后补全、编辑保留、取消隔离、纯口型禁用语音、启动和语言失败恢复；实际设备与无声准确率需单独验证。
-
-The full repository suite passes **1,310 tests, with 24 skipped**. Automated regressions cover early results, edit preservation, cancellation isolation, speech exclusion in lip-only mode, startup and language-switch recovery. Real-device behavior and silent accuracy require separate validation.
-
-## 许可 / License
-
-项目代码保留 [MIT License](LICENSE) 与原作者版权声明。第三方组件、模型和数据适用各自许可，详见 [NOTICE](NOTICE)。CNVSRC/CMLR 等研究权重的使用限制不会因为本仓库代码采用 MIT 而改变；此仓库不重新分发这些权重、适配参数或数据集。
-
-The project code retains its [MIT License](LICENSE) and original copyright notice. Third-party components, models and datasets retain their own terms; see [NOTICE](NOTICE). The MIT code license does not remove the restrictions on research weights such as CNVSRC/CMLR. Those weights, adapters and datasets are not redistributed here.
-
-## 致谢 / Acknowledgements
-
-感谢 **[Amy Zhou](https://github.com/amywork777)** 创建并开源 **[Lipflow](https://github.com/amywork777/lipflow)**，让这个项目有了起点。也感谢原项目所依赖的研究者与开源贡献者。本仓库在原作基础上独立维护，继续探索中文语音与唇语输入。
-
-Thank you to **[Amy Zhou](https://github.com/amywork777)** for creating and open-sourcing **[Lipflow](https://github.com/amywork777/lipflow)**, the foundation of this project. Thanks also to the researchers and open-source contributors behind its components. This repository is maintained independently and continues exploring Mandarin speech and lip-based input.
-
-## Sponsor / 赞助支持
-
-If this project helps you, consider sponsoring to support ongoing maintenance.
-
-如果这个项目对你有帮助，欢迎赞助支持，让我能持续维护和更新。
-
-- [GitHub Sponsors](https://github.com/sponsors/BryceYuuu): card / PayPal
-- [爱发电 Afdian](https://afdian.com/a/bryce): 微信 / 支付宝 (WeChat Pay / Alipay)
+LipCN focuses on Mandarin input and also integrates the original English lip-reading model. For the full original English application, check out [Lipflow](https://github.com/amywork777/lipflow) by [Amy Zhou (@amywork777)](https://github.com/amywork777).

@@ -1,6 +1,6 @@
 # 个人口型适配 / Personal lip adaptation
 
-不同的人嘴型差别很大：公开开发集上同一个模型对不同说话者的字错误率从 25% 到 95% 不等。用你自己的摄像头和默念方式训练一个个人 adapter，是目前最可能明显提高准确率的办法。它从当前 Round8 adapter 出发，只训练编码器最后两层；只有在你自己的测试句上比 Round8 更好时才会安装。
+不同的人嘴型差别很大：公开开发集上同一个模型对不同说话者的字错误率从 25% 到 95% 不等。用你自己的摄像头和默念方式训练一个个人 adapter，是目前最可能明显提高准确率的办法。本机有 Round8 adapter 时从它出发，没有时（Round8 不随仓库发布）从公开的 CNVSRC 基座出发；只训练编码器最后两层，只有在你自己的测试句上比起点更好时才会安装。没有 adapter 的用户装上个人 adapter 后，就能使用中文纯口型模式。
 
 People's lips differ a lot: on the public development set the same model ranges from 25% to 95% CER across speakers. A personal adapter, trained from Round8 on your own webcam and silent articulation, is the most promising way to raise accuracy. It is installed only if it beats Round8 on your own dev clips.
 
