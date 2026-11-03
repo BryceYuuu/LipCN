@@ -20,3 +20,13 @@ desktop/mandarin/vendor/
 desktop/mandarin/runtime/
 desktop/mandarin/formatter-model/
 desktop/mandarin/evidence/
+
+# Recordings and anything showing a face never belong in Git
+*.mp4
+*.mov
+*.m4v
+*.avi
+*.webm
+silent-data/
+personal-data/
+personal-adapter/
