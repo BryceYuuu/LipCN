@@ -101,7 +101,7 @@ def test_duplicate_or_short_decoder_output_leaves_empty_disabled_slots(controlle
 
 @pytest.mark.parametrize('language,beams,expected', [
     ('zh-Hans', ['。！？', '軟件不會改', '软件会改'], ['软件不会改。', '软件会改。']),
-    ('zh-Hant', ['。！？', '软件不会改', '軟件會改'], ['軟件不會改。', '軟件會改。']),
+    ('zh-Hant', ['。！？', '软件不会改', '軟件會改'], ['軟體不會改。', '軟體會改。']),
     ('en', ['...', 'ALICE WILL NOT PAY', 'ALICE WILL PAY'], ['ALICE WILL NOT PAY', 'ALICE WILL PAY']),
 ])
 def test_validated_first_candidate_is_queued_before_final_and_user_edit_survives(

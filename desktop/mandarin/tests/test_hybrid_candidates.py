@@ -406,7 +406,7 @@ def test_initial_is_exactly_full_first_option_with_real_script_conversion(langua
 def test_initial_default_is_simplified_and_traditional_uses_real_phrase_conversion():
     subject = hc.CandidateFormatter()
     assert subject.initial('頭髮發展，軟件100元').variants[0].text == '头发发展，软件100元。'
-    assert subject.initial('头发发展，软件100元', language='zh-Hant').variants[0].text == '頭髮發展，軟件100元。'
+    assert subject.initial('头发发展，软件100元', language='zh-Hant').variants[0].text == '頭髮發展，軟體100元。'
 
 
 @pytest.mark.parametrize('language', ['zh-Hans', 'zh-Hant', 'en'])

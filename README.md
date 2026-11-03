@@ -12,9 +12,9 @@ LipCN focuses on Mandarin input and also integrates the original English lip-rea
 
 | 中文 | English |
 | --- | --- |
-| **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output for display, copy and insertion; English uses the original visual model with camera-only capture. |
+| **三种语言**：默认简体中文；繁體中文共用中文识别模型，结果、复制与输入均输出繁体，并使用台湾常用词（软件→軟體、视频→影片）；English 使用原项目的英文口型模型，仅采集画面。 | **Three language choices:** Simplified Chinese by default; Traditional Chinese uses the same Mandarin recognizer with traditional output and Taiwan terms (軟體, 影片) for display, copy and insertion; English uses the original visual model with camera-only capture. |
 | **两种输入方式**：每次启动默认纯口型，只用摄像头，不申请或打开麦克风；会话内可切换语音优先，使用本地 Whisper 并按需回退口型。 | **Two input modes:** every launch starts in Lip only, using the camera without requesting or opening the microphone. Switch to Speech first for the current session to use local Whisper with visual fallback on demand. |
-| **先出结果、直接修改**：方案一先显示并开放复制/输入，再补充方案二、三；可用方案可直接编辑，后续候选保留你的修改。 | **Early, editable results:** Option 1 is usable before Options 2 and 3 finish. Edit any available option before copying or inserting; later generation preserves your edits. |
+| **先出草稿、直接修改**：中文口型编码完成后立即显示草稿方案一，不再等待约 1–5 秒的完整搜索；完整搜索完成后自动替换并补充方案二、三；可用方案可直接编辑，后续结果保留你的修改。 | **Draft first, editable results:** Mandarin lip input shows a draft Option 1 as soon as encoding finishes, without waiting roughly 1–5 s for the full search, which then replaces it and adds Options 2 and 3. Edit any available option; later results preserve your edits. |
 | **不同口型候选**：按模型排序展示最多三个不同识别结果，过滤仅句读、多余空格或字形不同的重复项；不把同一句改写成三个方案，不足三条时留空。 | **Distinct lip-reading hypotheses:** show up to three different model-ranked readings, deduplicating sentence punctuation, redundant spacing and script variants. No paraphrases of a single guess; unavailable choices stay empty. |
 | **语音文字整理**：语音识别仍提供保守的标点、自然表达和精简选项，默认不加载润色模型。 | **Speech wording cleanup:** accepted speech still offers conservative punctuation, natural and concise options without a wording model by default. |
 | **右 Command 切换**：按一下开始、再按一下结束；Esc 取消，也可使用窗口按钮。 | **Right Command toggle:** press once to start and again to finish; Esc cancels, with on-screen buttons available too. |
@@ -99,6 +99,10 @@ Lip-reading options now come directly from model hypotheses without MLX or parap
 此前 2.3.0 发布包将“识别完成后的第一条可用结果”和“后续文字整理”分开：第一条不加载表达模型。真实本机文字整理测试中，四条合成测试句的第一条准备耗时为 **0.02–15.14 毫秒**；全部三个方案为 **0.57–9.40 秒**（首条含表达模型冷加载）。这些数字只衡量文字整理，不含录制、语音/口型识别，不能作为整句端到端速度承诺。
 
 Version 2.3.0 separates the first usable recognition from subsequent wording work. The first option does not load the wording model. On this development Mac, four synthetic-text checks took **0.02–15.14 ms** to prepare Option 1 and **0.57–9.40 s** for all three options, including a cold model load in the first case. These are formatting-only measurements, excluding capture and recognition.
+
+中文口型完整搜索可选加入 CMLR 字级语言模型（浅融合）。未参与调参的 40 段验证视频上字错误率由 57.2% 降至 55.8%，完整结果平均慢约 1.7 秒，草稿不受影响，见[语言模型融合](docs/validation/lm-fusion.md)。
+
+The Mandarin full search can add the CMLR character LM (shallow fusion). On 40 untouched held-out clips CER fell from 57.2% to 55.8%; final results take about 1.7 s longer while the draft is unaffected. See [LM fusion](docs/validation/lm-fusion.md).
 
 当前没有经确认的真实无声独立样本，因此本版**不宣称无声中文准确率提高，也没有替换默认权重**。新增独立采集、数据隔离审计，以及替换/删除/插入错误、人名和数字错误报告，见 [真实无声采集与验收](research/SILENT_EVALUATION.md)。采集工具会明确保存你主动录制的本地视频；普通桌面输入仍不保存视频或句子历史。
 

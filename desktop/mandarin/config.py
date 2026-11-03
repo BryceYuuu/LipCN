@@ -24,6 +24,12 @@ ASR_MODEL = _path('LIPCN_ASR_MODEL', MODELS / 'faster-whisper-large-v3-turbo')
 FORMATTER_MODEL = _path('LIPCN_FORMATTER_MODEL', MODELS / 'Qwen3-1.7B-4bit')
 CHECKPOINT = _path('LIPCN_CNVSRC_CHECKPOINT', MODELS / 'model_avg_cncvs_2_3_cnvsrc.pth')
 SOURCE = _path('LIPCN_CNVSRC_SOURCE', CACHE / 'CNVSRC2025')
-ADAPTER = _path('LIPCN_LIP_ADAPTER', MODELS / 'round8-encoder-adapter.pth')
+# A personal adapter (research/scripts/train_personal_adapter.sh) is installed only
+# after it beats Round8 on the user's own dev clips, so prefer it when present.
+PERSONAL_ADAPTER = MODELS / 'personal-encoder-adapter.pth'
+ADAPTER = _path('LIPCN_LIP_ADAPTER', PERSONAL_ADAPTER if PERSONAL_ADAPTER.is_file()
+                else MODELS / 'round8-encoder-adapter.pth')
+# Optional CMLR character LM (model.pth + model.json); absent means no LM fusion.
+CHINESE_LM = _path('LIPCN_CHINESE_LM', MODELS / 'cmlr-lm')
 STATE = _path('LIPCN_LIVE_STATE', CACHE / 'runtime' / 'mandarin')
 PROFILE = _path('LIPCN_PROFILE_DIR', Path.home() / 'Library' / 'Application Support' / 'LipCN')

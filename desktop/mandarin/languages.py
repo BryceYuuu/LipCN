@@ -14,6 +14,9 @@ LANGUAGE_CHOICES = (
     ('en', 'English'),
 )
 DEFAULT_LANGUAGE = 'zh-Hans'
+# Every Chinese choice shares one Mandarin recognizer; only the output differs.
+CHINESE_LANGUAGES = ('zh-Hans', 'zh-Hant')
+TRADITIONAL_LANGUAGES = ('zh-Hant',)
 
 
 def validate_language(language: str) -> str:
@@ -61,5 +64,14 @@ def to_simplified(text: str) -> str:
 
 
 def to_traditional(text: str) -> str:
-    # s2t changes script, without s2twp's regional terminology substitutions.
-    return _convert(text, 's2t')
+    # s2twp: Taiwan standard characters plus common Taiwan terms (軟體, 影片, 資訊).
+    return _convert(text, 's2twp')
+
+
+def to_output_script(text: str, language: str) -> str:
+    """Convert recognized Chinese text to the writing system of ``language``."""
+    if language == 'zh-Hans':
+        return to_simplified(text)
+    if language == 'zh-Hant':
+        return to_traditional(text)
+    return text

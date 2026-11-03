@@ -46,15 +46,14 @@ def test_fast_does_not_load_generate_inspect_model_path_or_take_model_lock(monke
     formatter.model_path.is_dir.assert_not_called()
 
 
-def test_fast_uses_real_opencc_without_regional_terminology_changes():
+def test_fast_uses_real_opencc_with_taiwan_terms_for_traditional():
     formatter = hc.CandidateFormatter()
     simplified = formatter.format_fast('你咋看這個軟件，頭髮不能剪', language='zh-Hans')
     traditional = formatter.format_fast('你咋看这个软件，头发不能剪', language='zh-Hant')
     assert [v.text for v in simplified.variants] == [
         '你咋看这个软件，头发不能剪。', '你怎么看这个软件，头发不能剪。', '你咋看这个软件，头发不能剪。']
     assert [v.text for v in traditional.variants] == [
-        '你咋看這個軟件，頭髮不能剪。', '你怎麼看這個軟件，頭髮不能剪。', '你咋看這個軟件，頭髮不能剪。']
-    assert all('軟體' not in v.text for v in traditional.variants)
+        '你咋看這個軟體，頭髮不能剪。', '你怎麼看這個軟體，頭髮不能剪。', '你咋看這個軟體，頭髮不能剪。']
 
 
 @pytest.mark.parametrize('raw,protected', [

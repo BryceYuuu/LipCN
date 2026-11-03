@@ -91,6 +91,8 @@ Set these variables before launch to reuse existing model files:
 | `LIPCN_CNVSRC_CHECKPOINT` | 口型基座文件 / Visual checkpoint file |
 | `LIPCN_CNVSRC_SOURCE` | CNVSRC2025 配置/词表来源目录 / Config and vocabulary source |
 | `LIPCN_LIP_ADAPTER` | 兼容的本地口型 adapter / Compatible local visual adapter |
+| `LIPCN_CHINESE_LM` | 可选 CMLR 字级语言模型目录，默认 `<模型根目录>/cmlr-lm`；存在且校验通过时参与中文口型搜索，见[语言模型融合](../../docs/validation/lm-fusion.md) / Optional CMLR character LM directory used for Mandarin lip search when present and verified |
+| `LIPCN_LM_FUSION` | 设为 `0` 关闭语言模型融合，完整结果更快但准确率略低 / Set to `0` to disable LM fusion for faster final results |
 | `LIPCN_LIVE_STATE` | 仅数字/布尔状态文件目录，默认 `<cache>/runtime/mandarin` / Diagnostic status directory |
 | `LIPCN_PROFILE_DIR` | 独立配置目录，默认 `~/Library/Application Support/LipCN` / Separate profile directory |
 
@@ -106,7 +108,8 @@ Keep models, recordings, videos, runtime state, personal profiles and `.env` fil
 
 ## 4. 使用与验证 / Use and verification
 
-- 右上角语言选择提供“简体中文”“繁體中文”“English”，每次启动默认简体中文。简繁共用中文识别，只转换最终结果字形；复制和输入保持所选字形。 / The top-right language selector offers Simplified Chinese, Traditional Chinese and English, defaulting to Simplified Chinese on each launch. Chinese modes share one recognizer; final output, copy and insertion use the selected writing system.
+- 右上角语言选择提供“简体中文”“繁體中文”“English”，每次启动默认简体中文。简繁共用中文识别，只转换最终结果；“繁體中文”使用 OpenCC `s2twp`，同时转换台湾常用词（软件→軟體、视频→影片、信息→資訊）。复制和输入保持所选字形。 / The top-right language selector offers Simplified Chinese, Traditional Chinese and English, defaulting to Simplified Chinese on each launch. Chinese modes share one recognizer; Traditional Chinese uses OpenCC `s2twp`, which also applies Taiwan terms. Final output, copy and insertion use the selected writing system.
+- 中文口型结束后先显示 CTC 草稿（标为“草稿”），完整搜索完成后自动替换；已修改的草稿不会被覆盖。公开开发子集上草稿 CER 约高 3 个百分点，见[个人摄像头基准](../../docs/validation/webcam-baseline.md)。 / Mandarin lip input first shows a CTC draft (labelled as such); the full search replaces it unless you have edited it. On the public development subset the draft CER is about 3 points higher; see the [webcam baseline](../../docs/validation/webcam-baseline.md).
 - 每次启动默认“纯口型”，忽略旧的输入模式偏好；可在当前会话切换“语音优先”，重启后恢复纯口型。输入方式不写入配置。纯口型不请求麦克风权限，也不调用语音识别。 / Every launch starts in Lip only, ignoring old input-mode preferences. Speech first can be selected for the current session; restarting returns to Lip only. Input-mode choices are not persisted. Lip only never requests microphone permission or runs ASR.
 - 方案一先显示，口型其余方案来自不同的模型候选；按最终输出字形忽略句读/多余空白重复，最多展示三条，不足时留空并禁用对应按钮。可直接编辑，复制/输入使用修改后的内容，后续候选不覆盖已编辑文本。 / Option 1 appears first; the other lip choices are different model hypotheses. Deduplication follows output-script conversion and ignores sentence punctuation and redundant spacing; up to three choices are shown, with unavailable slots empty and disabled. Direct edits are preserved and used for copying/insertion.
 - 不提供“100% 正确”阈值：现有解码分数没有经过正确率校准。即使候选一致，也不代表识别正确；不会用润色模型编造缺少的候选。 / No 100%-correct threshold is claimed: decoder scores are not calibrated correctness probabilities. Agreement does not prove correctness, and a wording model never invents missing lip candidates.

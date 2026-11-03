@@ -56,6 +56,16 @@ def test_cache_and_model_root_overrides_cascade(monkeypatch, tmp_path):
     assert config['STATE'] == cache / 'runtime' / 'mandarin'
 
 
+def test_installed_personal_adapter_is_preferred_unless_overridden(monkeypatch, tmp_path):
+    models = tmp_path / 'models'
+    models.mkdir()
+    (models / 'personal-encoder-adapter.pth').write_bytes(b'x')
+    monkeypatch.setenv('LIPCN_MANDARIN_MODELS', str(models))
+    assert runpy.run_path(str(CONFIG))['ADAPTER'] == models / 'personal-encoder-adapter.pth'
+    monkeypatch.setenv('LIPCN_LIP_ADAPTER', str(tmp_path / 'round8.pth'))
+    assert runpy.run_path(str(CONFIG))['ADAPTER'] == tmp_path / 'round8.pth'
+
+
 @pytest.mark.parametrize('constant,variable', OVERRIDES.items())
 def test_individual_paths_support_home_expansion(monkeypatch, tmp_path, constant, variable):
     monkeypatch.setenv('HOME', str(tmp_path))

@@ -20,8 +20,8 @@ import time
 import unicodedata
 from typing import Callable, Sequence
 
-from languages import (LanguageConversionError, to_simplified, to_traditional,
-                       validate_language)
+from languages import (CHINESE_LANGUAGES, TRADITIONAL_LANGUAGES, LanguageConversionError,
+                       to_simplified, to_traditional, validate_language)
 
 _HAN = re.compile(r"[\u3400-\u9fff]")
 _NUMBER = re.compile(r"\d+(?:[.,:/-]\d+)*|[零〇一二两三四五六七八九十百千万亿]+")
@@ -81,6 +81,9 @@ _CANDIDATE_TOKEN = re.compile(
     r"[\u3400-\u9fff]|\d+(?:[.,:/-]\d+)*|"
     r"[^\W\d_\u3400-\u9fff][^\W\u3400-\u9fff]*(?:['-][^\W\u3400-\u9fff]+)*|"
     r"[^\s.,!?;:\"'“”‘’()\[\]{}…，。！？；：、「」『』]", re.UNICODE)
+
+
+_HAN_SPACE = re.compile(r'(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])')
 
 
 def _recognition_key(text: str) -> tuple[str, ...]:
@@ -306,6 +309,15 @@ def _parse_output(output: str) -> dict[str, str]:
     return value
 
 
+def to_output_script(text: str, language: str) -> str:
+    # Module-level converters keep script failures observable in tests.
+    if language == 'zh-Hans':
+        return to_simplified(text)
+    if language == 'zh-Hant':
+        return to_traditional(text)
+    return text
+
+
 def _prepare_input(candidates: Sequence[str] | str, protected_names: Sequence[str],
                    language: str) -> tuple[list[str], Sequence[str]]:
     if language != 'zh':  # Compatibility with the original Mandarin-only API.
@@ -313,7 +325,7 @@ def _prepare_input(candidates: Sequence[str] | str, protected_names: Sequence[st
     if isinstance(candidates, str):
         candidates = [candidates]
     clean = [text.strip() for text in candidates if isinstance(text, str) and text.strip()]
-    if language in ('zh-Hans', 'zh-Hant'):
+    if language in CHINESE_LANGUAGES:
         clean = [to_simplified(text) for text in clean]
         protected_names = tuple(to_simplified(name) for name in protected_names if name)
     return clean, protected_names
@@ -346,12 +358,13 @@ def _initial_result(candidates: Sequence[str], source: str, *, english: bool) ->
 def _present_result(result: CandidateResult, language: str, started: float) -> CandidateResult:
     # The same converted text is used for display, copy and insertion in either
     # the immediate or complete result. Script changes are not wording changes.
-    if language in ('zh-Hans', 'zh-Hant') and result.variants:
+    if language in CHINESE_LANGUAGES and result.variants:
         result = replace(result, variants=(replace(result.variants[0], label='保留原意'),
                                           *result.variants[1:]))
-    if language == 'zh-Hant':
-        result = replace(result, raw=to_traditional(result.raw), variants=tuple(
-            replace(variant, text=to_traditional(variant.text)) for variant in result.variants))
+    if language in TRADITIONAL_LANGUAGES:
+        result = replace(result, raw=to_output_script(result.raw, language), variants=tuple(
+            replace(variant, text=to_output_script(variant.text, language))
+            for variant in result.variants))
     return replace(result, elapsed_seconds=time.monotonic() - started)
 
 
@@ -467,13 +480,12 @@ class CandidateFormatter:
             if not isinstance(candidate, str) or not candidate.strip():
                 continue
             candidate = candidate.strip()
-            if language == 'zh-Hans':
-                candidate = to_simplified(candidate)
-            elif language == 'zh-Hant':
-                candidate = to_traditional(candidate)
+            # Phrase conversion (软件→軟體) only matches unspaced words, so the
+            # key converts the text with spaces between Han characters removed.
+            key = _recognition_key(to_output_script(_HAN_SPACE.sub('', candidate), language))
+            candidate = to_output_script(candidate, language)
             # The key is never displayed: punctuation/case normalization must
             # not rewrite names, contractions, numbers or any hypothesis words.
-            key = _recognition_key(candidate)
             if not key or key in seen:
                 continue
             seen.add(key)
@@ -556,7 +568,7 @@ class CandidateFormatter:
         else:
             result = self._format_chinese(clean, source=source, protected_names=names,
                                           normalize_script=language != 'zh')
-        if language in ('zh-Hans', 'zh-Hant') and len(result.variants) == 1:
+        if language in CHINESE_LANGUAGES and len(result.variants) == 1:
             # A Chinese selection can contain only a foreign name or an acronym.
             # Retain it, without translating it or invoking the Chinese editor.
             result = replace(result, variants=tuple(

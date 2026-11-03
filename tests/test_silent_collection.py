@@ -192,3 +192,15 @@ def test_camera_loop_requires_explicit_start_and_two_confirmations_and_cleans_up
     assert not list((tmp_path / 'train').glob('.unconfirmed-*'))
     # Preview overlays must never enter the video.
     assert all(np.all(frame == 7) for frame in Writer.frames)
+
+
+def test_prompt_files_resume_by_skipping_saved_references(tmp_path):
+    from research.silent_collection import pending_cards, prompt
+    (tmp_path / 'train').mkdir()
+    (tmp_path / 'train' / 'manifest.json').write_text(json.dumps({
+        'schema_version': 1, 'split': 'train',
+        'samples': [{'reference': '我先去开会。'}, {'reference': '今天 下雨'}]}), encoding='utf-8')
+    cards = [prompt('我先去开会', []), prompt('今天下雨', []), prompt('明天见', [])]
+    pending, skipped = pending_cards(tmp_path, 'train', cards)
+    assert [card['reference'] for card in pending] == ['明天见'] and skipped == 2
+    assert pending_cards(tmp_path, 'dev', cards) == (cards, 0)

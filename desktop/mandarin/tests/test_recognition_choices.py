@@ -24,7 +24,7 @@ def test_actual_hypotheses_preserve_model_order_and_do_not_rewrite_the_first():
     ('zh-Hans', ['明天見', '明天见。', ' 明 天 见！', '明年见', '后天见'],
      ['明天见。', '明年见。', '后天见。']),
     ('zh-Hant', ['软件会发展', '軟件會發展。', '軟 件 會 發 展', '软件不会发展'],
-     ['軟件會發展。', '軟件不會發展。']),
+     ['軟體會發展。', '軟體不會發展。']),
     ('en', ["I CAN'T PAY ALICE", 'i can’t pay alice.', "I can't pay Alice!", 'I can pay Alice',
             'I cannot pay Alex'],
      ["I CAN'T PAY ALICE", 'I can pay Alice', 'I cannot pay Alex']),
@@ -34,9 +34,21 @@ def test_deduplicate_in_target_script_ignoring_punctuation_spaces_and_case(langu
     assert texts(result) == expected
 
 
-def test_traditional_conversion_does_not_replace_regional_terms():
+def test_taiwan_choices_use_taiwan_terms_and_dedupe_after_conversion():
+    # 软件/軟體 differ before conversion but are one hypothesis in Taiwan output.
+    result = hc.CandidateFormatter().recognition_choices(
+        ['这个软件很好', '這個軟體很好。', '这个视频不好'], language='zh-Hant')
+    assert texts(result) == ['這個軟體很好。', '這個影片不好。']
+
+
+def test_taiwan_speech_formatting_uses_taiwan_terms():
+    result = hc.CandidateFormatter().format_fast('这个软件的视频信息', source='speech', language='zh-Hant')
+    assert result.variants[0].text.startswith('這個軟體的影片資訊')
+
+
+def test_traditional_conversion_uses_taiwan_terms():
     result = hc.CandidateFormatter().recognition_choices(['这个软件很好', '这个软件不好'], language='zh-Hant')
-    assert texts(result) == ['這個軟件很好。', '這個軟件不好。']
+    assert texts(result) == ['這個軟體很好。', '這個軟體不好。']
 
 
 @pytest.mark.parametrize('candidates,expected', [

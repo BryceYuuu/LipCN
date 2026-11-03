@@ -37,7 +37,8 @@ class Widget:
 @pytest.fixture
 def controller(tmp_path, monkeypatch):
     wanted = {'_infer', '_inference_phase', '_inferred', '_infer_error', '_discarded', '_close_camera', '_status', '_uses_speech',
-              '_first_inferred', '_present_variants', '_choice_text', '_refresh_choices'}
+              '_first_inferred', '_present_variants', '_choice_text', '_refresh_choices',
+              '_show_draft', '_draft_inferred'}
     parsed = ast.parse(SOURCE.read_text(encoding='utf-8'))
     cls = next(node for node in parsed.body if isinstance(node, ast.ClassDef) and node.name == 'LiveTest')
     methods = [node for node in cls.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
@@ -224,3 +225,89 @@ def test_result_shows_only_three_choices_without_changing_candidate_text(control
         f'方案{number}：{text}' for number, text in zip('一二三', texts))
     assert controller.result_variants == texts
     assert controller.completed == 1
+
+
+class Editor:
+    def __init__(self):
+        self.text, self.editable, self.history = '', False, []
+
+    def string(self):
+        return self.text
+
+    def setString_(self, value):
+        self.text = value
+        self.history.append(value)
+
+    def setEditable_(self, value):
+        self.editable = value
+
+
+def with_draft(controller, draft_text='草稿内容', final_text='精确内容'):
+    controller.result_editors = [Editor() for _ in range(3)]
+    controller.result.show_choices = lambda: None
+    controller.reader.greedy = Mock(return_value=draft_text)
+    def choices(texts, language):
+        text = final_text if texts == ['口型原始内容'] else texts[0]
+        return CandidateResult(text, (Variant('方案一', text + '。'),), (), 'test', False, 0.0)
+    controller.formatter.recognition_choices = Mock(side_effect=choices)
+    return controller.result_editors[0]
+
+
+def test_lip_draft_is_shown_first_then_replaced_by_full_search(controller):
+    editor = with_draft(controller)
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    assert editor.history[:2] == ['草稿内容。', '精确内容。']
+    assert editor.text == '精确内容。' and not controller.showing_draft
+    controller.backend.configured_hypotheses.assert_called_once()
+    status = json.loads(controller.status_path.read_text(encoding='utf-8'))
+    assert status['draft_seconds'] is not None and 'lip_draft' in status['last_stage_seconds']
+
+
+def test_edited_draft_is_never_overwritten_by_full_result(controller):
+    editor = with_draft(controller)
+    original = controller._draft_inferred
+    def draft_then_edit(*args):
+        original(*args)
+        editor.text = '我改过的草稿'
+    controller._draft_inferred = draft_then_edit
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    assert editor.text == '我改过的草稿'
+    assert controller._choice_text(0) == '我改过的草稿'
+
+
+def test_draft_failure_still_runs_full_search(controller):
+    editor = with_draft(controller)
+    controller.reader.greedy.side_effect = RuntimeError('ctc unavailable')
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    assert set(editor.history) == {'精确内容。'} and controller.completed == 1 and not controller.error
+
+
+@pytest.mark.parametrize('draft_text', ['', '   ', None])
+def test_empty_draft_is_not_shown(controller, draft_text):
+    editor = with_draft(controller, draft_text=draft_text)
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    assert set(editor.history) == {'精确内容。'}
+
+
+def test_english_lips_do_not_use_mandarin_draft(controller):
+    with_draft(controller)
+    controller.language = controller.reader_language = 'en'
+    controller.reader.hypotheses = Mock(return_value=[SimpleNamespace(text='HELLO')])
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    controller.reader.greedy.assert_not_called()
+
+
+def test_stale_draft_after_cancel_is_ignored(controller):
+    editor = with_draft(controller)
+    controller.token = 4  # cancelled/restarted before the draft reached the UI
+    controller._draft_inferred(3, CandidateResult('x', (Variant('方案一', 'x'),), (), 't', False, 0.0), 0.1, {})
+    assert editor.history == [] and not getattr(controller, 'showing_draft', False)
+
+
+def test_loaded_chinese_lm_joins_the_full_search(controller):
+    lm = object()
+    controller.reader.lm_scorer = lm
+    controller._infer(3, recording(), np.zeros(16000, np.float32))
+    kwargs = controller.backend.configured_hypotheses.call_args.kwargs
+    assert kwargs['lm'] is lm and kwargs['lm_weight'] == 0.1 and kwargs['length_bonus'] == 0.5
+    assert kwargs['beam_size'] == 40 and kwargs['reverse_weight'] == .3

@@ -175,6 +175,18 @@ def _resolve_camera(camera):
     return next((index for index, device in enumerate(devices) if 'iphone' not in str(device.localizedName()).casefold()), 0)
 
 
+def pending_cards(root, split, cards):
+    """Drop prompts whose text is already saved in this split, so sessions can resume."""
+    manifest = Path(root) / split / 'manifest.json'
+    if not manifest.exists():
+        return list(cards), 0
+    data = json.loads(manifest.read_text(encoding='utf-8'))
+    saved = {tuple(characters(row.get('reference', ''))) for row in data.get('samples', [])
+             if isinstance(row, dict)}
+    pending = [card for card in cards if tuple(characters(card['reference'])) not in saved]
+    return pending, len(cards) - len(pending)
+
+
 def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megabytes=512.):
     """SPACE starts each clip; S then ENTER confirms; P replays; R/ESC discard."""
     details = metadata(**details)
@@ -189,6 +201,9 @@ def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megab
         cards = [prompt(**card) for card in cards]
         for card in cards:
             check_isolation(root, details, card['reference'])
+        cards, skipped = pending_cards(root, details['split'], cards)
+        if skipped:
+            print(f'已跳过本分组中已保存的 {skipped} 句，还剩 {len(cards)} 句。', flush=True)
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     print(f'仅摄像头，不打开麦克风。完整画面保存在：{directory / "videos"}', flush=True)
     print('请让完整脸部入镜。原句与画面必须一致，不能发声或耳语。SPACE 每句开始/停止；S 确认无声；Enter 确认原句和标注；P 回放；R 重录；Esc 丢弃退出。', flush=True)

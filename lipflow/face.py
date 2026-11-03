@@ -16,8 +16,20 @@ from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python import vision
 
 HERE = os.path.dirname(__file__)
-DEFAULT_MODEL = os.path.expanduser(os.environ.get(
-    "LIPCN_FACE_MODEL", os.path.join(HERE, "..", "models", "face_landmarker.task")))
+
+
+def _default_model() -> str:
+    """LIPCN_FACE_MODEL, else the legacy checkout copy, else LipCN's model cache."""
+    if os.environ.get("LIPCN_FACE_MODEL"):
+        return os.path.expanduser(os.environ["LIPCN_FACE_MODEL"])
+    legacy = os.path.join(HERE, "..", "models", "face_landmarker.task")
+    if os.path.isfile(legacy):
+        return legacy
+    cache = os.path.expanduser(os.environ.get("LIPCN_CACHE_DIR") or "~/.cache/lipcn")
+    return os.path.join(cache, "models", "face_landmarker.task")
+
+
+DEFAULT_MODEL = _default_model()
 
 # Subject's right eye is on the image left in an unmirrored camera frame, matching
 # dlib points 36-41 of the reference face.

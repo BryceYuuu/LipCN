@@ -16,18 +16,25 @@ def test_choices_default_and_recognition_routes_are_explicit():
     assert languages.recognition_language('en') == 'en'
 
 
-@pytest.mark.parametrize('language', ['zh', 'fr', '', 'EN', 'zh-TW', None, 0, ['en']])
+@pytest.mark.parametrize('language', ['zh', 'fr', '', 'EN', 'zh-TW', 'zh-HK', None, 0, ['en']])
 def test_unknown_ids_never_silently_select_a_recognizer(language):
     with pytest.raises(ValueError, match='不支持的语言'):
         languages.recognition_language(language)
 
 
-def test_real_opencc_preserves_facts_and_uses_script_not_regional_terms():
+def test_real_opencc_preserves_facts_and_uses_taiwan_terms():
     original = '我明天3点不能去开会，软件和硬盘，Alex API v2.1，费用100元。'
     traditional = languages.to_traditional(original)
-    assert traditional == '我明天3點不能去開會，軟件和硬盤，Alex API v2.1，費用100元。'
-    assert languages.to_simplified(traditional) == original
-    assert '軟體' not in traditional and '硬碟' not in traditional
+    assert traditional == '我明天3點不能去開會，軟體和硬碟，Alex API v2.1，費用100元。'
+
+
+def test_taiwan_output_uses_taiwan_terms_and_keeps_facts():
+    original = '我明天3点不能去开会，这个软件的视频信息，硬盘和鼠标，Alex API v2.1，费用100元。'
+    taiwan = languages.to_traditional(original)
+    assert taiwan == '我明天3點不能去開會，這個軟體的影片資訊，硬碟和滑鼠，Alex API v2.1，費用100元。'
+    assert languages.to_output_script(original, 'zh-Hant') == taiwan
+    assert languages.to_output_script(taiwan, 'zh-Hans').startswith('我明天3点不能去开会')
+    assert languages.to_output_script('Hello', 'en') == 'Hello'
 
 
 def test_real_opencc_resolves_common_phrase_context():
@@ -73,6 +80,6 @@ def test_converter_is_loaded_once_per_direction(monkeypatch):
         languages.to_simplified('明天见')
         languages.to_traditional('你好')
         languages.to_traditional('明天见')
-        assert calls == ['t2s', 's2t']
+        assert calls == ['t2s', 's2twp']
     finally:
         languages._converter.cache_clear()

@@ -208,7 +208,8 @@ REVERSE_TIE_TOLERANCE = 1e-3
 
 
 def configured_hypotheses(reader, encoded, *, beam_size, ctc_weight, nbest=5, reverse_weight=0.0,
-                          reverse_scoring='sequential', candidate_pool_size=None, pre_beam_ratio=1.5):
+                          reverse_scoring='sequential', candidate_pool_size=None, pre_beam_ratio=1.5,
+                          lm=None, lm_weight=0.0, length_bonus=0.0):
     """Apply one frozen configuration; this function never sees labels or selects settings."""
     from compare_chinese_decoders import validate_search_parameters
     pool, pre_beam_ratio = validate_search_parameters(beam_size, nbest, candidate_pool_size, pre_beam_ratio)
@@ -218,18 +219,19 @@ def configured_hypotheses(reader, encoded, *, beam_size, ctc_weight, nbest=5, re
             raise ValueError(f'{name} must be finite within [0, 1]')
     if reverse_scoring not in ('sequential', 'batched'):
         raise ValueError('reverse_scoring must be sequential or batched')
-    if reverse_weight == 0 and pool == nbest and pre_beam_ratio == 1.5:
+    fusion = {} if lm is None or not lm_weight else dict(lm=lm, lm_weight=lm_weight, length_bonus=length_bonus)
+    if reverse_weight == 0 and pool == nbest and pre_beam_ratio == 1.5 and not fusion:
         hypotheses = reader.hypotheses(encoded, nbest=nbest)
         return hypotheses, [asdict(hypothesis) for hypothesis in hypotheses]
     from compare_chinese_decoders import decode_candidates, rerank_candidates, reverse_log_probability
     from lipflow.confidence import Hypothesis
 
-    if pool == nbest and pre_beam_ratio == 1.5:
+    if pool == nbest and pre_beam_ratio == 1.5 and not fusion:
         # Preserve five-positional-argument callers/injected research decoders.
         candidates = decode_candidates(reader, encoded, ctc_weight, beam_size, nbest)
     else:
         candidates = decode_candidates(reader, encoded, ctc_weight, beam_size, nbest,
-                                       candidate_pool_size=pool, pre_beam_ratio=pre_beam_ratio)
+                                       candidate_pool_size=pool, pre_beam_ratio=pre_beam_ratio, **fusion)
     original = candidates
     sequential = lambda ids: reverse_log_probability(reader.model.r_decoder, encoded, ids,
                                                      len(reader.token_list) - 1)

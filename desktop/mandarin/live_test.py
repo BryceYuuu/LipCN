@@ -13,7 +13,8 @@ import os
 import sys
 import time
 
-from config import ADAPTER, CHECKPOINT, ENGLISH_MODELS, FORMATTER_MODEL, PROFILE, ROOT, SOURCE, STATE
+from config import (ADAPTER, CHECKPOINT, CHINESE_LM, ENGLISH_MODELS, FORMATTER_MODEL, PROFILE, ROOT,
+                    SOURCE, STATE)
 
 # The retained lipflow Python package reads this legacy variable on import.
 # Keep this product's profile separate even when launched directly with Python.
@@ -29,11 +30,12 @@ import numpy as np
 import objc
 from AppKit import (
     NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
-    NSButton, NSColor, NSFont, NSImageScaleProportionallyUpOrDown, NSImageView,
-    NSMakeRect, NSMenu, NSMenuItem, NSPopUpButton, NSProgressIndicator,
-    NSProgressIndicatorStyleSpinning, NSScrollView, NSTextField, NSTextView,
-    NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskMiniaturizable,
-    NSWindowStyleMaskTitled,
+    NSBox, NSBoxCustom, NSButton, NSColor, NSFont, NSFontWeightMedium,
+    NSFontWeightSemibold, NSImage, NSImageLeading, NSImageScaleProportionallyUpOrDown,
+    NSImageView, NSMakeRect, NSMenu, NSMenuItem, NSNoBorder, NSNoTitle, NSPopUpButton,
+    NSProgressIndicator, NSProgressIndicatorStyleSpinning, NSScrollView, NSTextField,
+    NSTextView, NSWindow, NSWindowStyleMaskClosable, NSWindowStyleMaskFullSizeContentView,
+    NSWindowStyleMaskMiniaturizable, NSWindowStyleMaskTitled,
 )
 from Foundation import NSObject, NSTimer
 from PyObjCTools import AppHelper
@@ -58,12 +60,48 @@ STATUS = STATE / 'status.json'
 MAX_SECONDS = 20.0
 
 
-def label(root, text, frame, size=15, color=None):
+def label(root, text, frame, size=15, color=None, weight=None):
     view = NSTextField.wrappingLabelWithString_(text)
     view.setFrame_(NSMakeRect(*frame))
-    view.setFont_(NSFont.systemFontOfSize_(size))
+    view.setFont_(NSFont.systemFontOfSize_(size) if weight is None
+                  else NSFont.systemFontOfSize_weight_(size, weight))
     if color is not None:
         view.setTextColor_(color)
+    root.addSubview_(view)
+    return view
+
+
+def card(root, frame, *, fill=None, radius=12.0, border=True):
+    """A rounded, appearance-aware container (NSBox keeps dynamic colors live)."""
+    box = NSBox.alloc().initWithFrame_(NSMakeRect(*frame))
+    box.setBoxType_(NSBoxCustom)
+    box.setTitlePosition_(NSNoTitle)
+    box.setContentViewMargins_((0, 0))
+    box.setCornerRadius_(radius)
+    # Media cards draw edge to edge; their highlight is a layer border on top.
+    box.setBorderWidth_(1.0 if border else 0.0)
+    box.setBorderColor_(NSColor.separatorColor())
+    box.setFillColor_(fill if fill is not None else NSColor.textBackgroundColor())
+    box.setWantsLayer_(True)
+    box.layer().setMasksToBounds_(True)
+    box.layer().setCornerRadius_(radius)
+    root.addSubview_(box)
+    return box
+
+
+def button(root, title, target, action, frame, *, symbol=None, size=13, primary=False, tip=None):
+    view = NSButton.buttonWithTitle_target_action_(title, target, action)
+    view.setFrame_(NSMakeRect(*frame))
+    view.setFont_(NSFont.systemFontOfSize_weight_(size, NSFontWeightSemibold if primary
+                                                 else NSFontWeightMedium))
+    image = NSImage.imageWithSystemSymbolName_accessibilityDescription_(symbol, title) if symbol else None
+    if image is not None:
+        view.setImage_(image)
+        view.setImagePosition_(NSImageLeading)
+    if primary:
+        view.setBezelColor_(NSColor.controlAccentColor())
+    if tip:
+        view.setToolTip_(tip)
     root.addSubview_(view)
     return view
 
@@ -135,6 +173,8 @@ class LiveTest(NSObject):
         self.hotkey_note = '快捷键正在初始化'
         self.last_route = None
         self.result_variants = []
+        self.showing_draft = False
+        self.draft_seconds = None
         self.pending_begin = False
         self.camera_permission_pending = False
         self._build()
@@ -143,119 +183,161 @@ class LiveTest(NSObject):
 
     @objc.python_method
     def _build(self):
+        width, height = 1000, 780
         self.window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
-            NSMakeRect(0, 0, 1000, 800),
-            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable,
+            NSMakeRect(0, 0, width, height),
+            NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
+            | NSWindowStyleMaskFullSizeContentView,
             NSBackingStoreBuffered, False)
         self.window.setTitle_('LipCN')
+        self.window.setTitlebarAppearsTransparent_(True)
+        self.window.setTitleVisibility_(1)  # NSWindowTitleHidden; the header shows the name.
         self.window.setReleasedWhenClosed_(False)
         self.window.setDelegate_(self)
         root = self.window.contentView()
-        label(root, 'LipCN', (26, 752, 300, 30), 25)
-        label(root, '输入', (380, 752, 50, 25), 15)
+        secondary = NSColor.secondaryLabelColor()
+
+        # Header: name and the two session choices.
+        label(root, 'LipCN', (24, 714, 90, 32), 24, weight=NSFontWeightSemibold)
+        label(root, '本机唇语与语音输入 · 不上传画面和文字', (112, 718, 330, 20), 12, secondary)
+        label(root, '输入', (500, 720, 36, 20), 13, secondary)
         self.mode_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
-            NSMakeRect(432, 747, 207, 32), False)
+            NSMakeRect(536, 713, 196, 30), False)
         self.mode_popup.addItemsWithTitles_([title for _, title in INPUT_MODES])
         self.mode_popup.selectItemAtIndex_(next(i for i, (mode, _) in enumerate(INPUT_MODES)
                                               if mode == self.input_mode))
         self.mode_popup.setTarget_(self)
         self.mode_popup.setAction_('changeInputMode:')
         root.addSubview_(self.mode_popup)
-        label(root, '语言', (670, 752, 50, 25), 15)
+        label(root, '语言', (748, 720, 36, 20), 13, secondary)
         self.language_popup = NSPopUpButton.alloc().initWithFrame_pullsDown_(
-            NSMakeRect(725, 747, 249, 32), False)
+            NSMakeRect(784, 713, 194, 30), False)
         self.language_popup.addItemsWithTitles_([title for _, title in LANGUAGE_CHOICES])
         self.language_popup.selectItemAtIndex_(0)
         self.language_popup.setTarget_(self)
         self.language_popup.setAction_('changeLanguage:')
         self.language_popup.setEnabled_(False)
         root.addSubview_(self.language_popup)
-        self.video = NSImageView.alloc().initWithFrame_(NSMakeRect(26, 345, 640, 360))
+
+        # Camera preview and mouth close-up on dark, rounded cards.
+        self.video_card = card(root, (24, 336, 640, 360), fill=NSColor.blackColor(), radius=14,
+                               border=False)
+        self.video = NSImageView.alloc().initWithFrame_(self.video_card.contentView().bounds())
         self.video.setImageScaling_(NSImageScaleProportionallyUpOrDown)
-        root.addSubview_(self.video)
-        self.mouth = NSImageView.alloc().initWithFrame_(NSMakeRect(686, 505, 288, 180))
+        self.video_card.contentView().addSubview_(self.video)
+        self.mouth_card = card(root, (684, 516, 292, 180), fill=NSColor.blackColor(), radius=14,
+                               border=False)
+        self.mouth = NSImageView.alloc().initWithFrame_(self.mouth_card.contentView().bounds())
         self.mouth.setImageScaling_(NSImageScaleProportionallyUpOrDown)
-        root.addSubview_(self.mouth)
-        self.access_label = label(root, '', (686, 371, 288, 48), 11, NSColor.secondaryLabelColor())
-        for x, title, action in ((686, '启用快捷键', 'requestHotkey:'), (836, '麦克风权限', 'requestMicrophone:')):
-            b = NSButton.buttonWithTitle_target_action_(title, self, action)
-            b.setFrame_(NSMakeRect(x, 336, 136, 29))
-            root.addSubview_(b)
+        self.mouth_card.contentView().addSubview_(self.mouth)
+        label(root, '嘴部特写', (684, 490, 292, 18), 12, secondary)
+        self.access_label = label(root, '', (684, 432, 292, 48), 12, NSColor.systemOrangeColor())
+        for x, title, action, symbol in ((684, '启用快捷键', 'requestHotkey:', 'command'),
+                                         (834, '麦克风权限', 'requestMicrophone:', 'mic')):
+            b = button(root, title, self, action, (x, 392, 142, 32), symbol=symbol)
             if action == 'requestMicrophone:':
                 self.microphone_button = b
-        self.retry_button = NSButton.buttonWithTitle_target_action_('重试加载', self, 'retryModels:')
-        self.retry_button.setFrame_(NSMakeRect(836, 420, 136, 29))
+        self.retry_button = button(root, '重试加载', self, 'retryModels:', (684, 352, 142, 32),
+                                   symbol='arrow.clockwise')
         self.retry_button.setHidden_(True)
-        root.addSubview_(self.retry_button)
-        self.progress = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(26, 317, 18, 18))
+
+        # Status line.
+        self.progress = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(24, 302, 18, 18))
         self.progress.setStyle_(NSProgressIndicatorStyleSpinning)
         self.progress.setIndeterminate_(True)
         self.progress.setDisplayedWhenStopped_(False)
         root.addSubview_(self.progress)
-        self.state_label = label(root, '加载中文口型模型 · 0.0 秒', (52, 311, 919, 28), 17)
-        self.start_button = NSButton.buttonWithTitle_target_action_('开始说一句', self, 'begin:')
-        self.start_button.setFrame_(NSMakeRect(26, 254, 240, 46))
-        self.start_button.setFont_(NSFont.boldSystemFontOfSize_(19))
+        self.state_label = label(root, '加载中文口型模型 · 0.0 秒', (50, 298, 926, 24), 16,
+                                 weight=NSFontWeightMedium)
+
+        # Actions: one prominent start, then finish/cancel, close at the far edge.
+        self.start_button = button(root, '开始说一句', self, 'begin:', (24, 240, 230, 46),
+                                   symbol='record.circle', size=17, primary=True,
+                                   tip='也可按右 Command 开始')
         self.start_button.setEnabled_(False)
-        root.addSubview_(self.start_button)
-        self.stop_button = NSButton.buttonWithTitle_target_action_('结束并识别', self, 'finish:')
-        self.stop_button.setFrame_(NSMakeRect(280, 254, 240, 46))
-        self.stop_button.setFont_(NSFont.boldSystemFontOfSize_(19))
+        self.stop_button = button(root, '结束并识别', self, 'finish:', (266, 240, 230, 46),
+                                  symbol='stop.circle', size=17, tip='再按一次右 Command 也可结束')
         self.stop_button.setEnabled_(False)
-        root.addSubview_(self.stop_button)
-        self.cancel_button = NSButton.buttonWithTitle_target_action_('取消本句', self, 'cancel:')
-        self.cancel_button.setFrame_(NSMakeRect(536, 254, 170, 46))
+        self.cancel_button = button(root, '取消本句', self, 'cancel:', (508, 240, 156, 46),
+                                    symbol='xmark.circle', size=15, tip='Esc')
         self.cancel_button.setKeyEquivalent_('\x1b')
         self.cancel_button.setEnabled_(False)
-        root.addSubview_(self.cancel_button)
-        quit_button = NSButton.buttonWithTitle_target_action_('关闭', self, 'quit:')
-        quit_button.setFrame_(NSMakeRect(800, 254, 174, 46))
-        root.addSubview_(quit_button)
-        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(26, 90, 948, 152))
+        button(root, '关闭', self, 'quit:', (856, 240, 120, 46), size=15)
+
+        # Messages share the result area with three editable choice cards.
+        message_box = card(root, (24, 72, 952, 156), radius=12)
+        scroll = NSScrollView.alloc().initWithFrame_(NSMakeRect(8, 6, 936, 144))
         scroll.setHasVerticalScroller_(True)
-        self.result = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 928, 154))
+        scroll.setBorderType_(NSNoBorder)
+        scroll.setDrawsBackground_(False)
+        self.result = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 920, 144))
         self.result.setEditable_(False)
         self.result.setSelectable_(True)
-        self.result.setFont_(NSFont.systemFontOfSize_(19))
+        self.result.setDrawsBackground_(False)
+        self.result.setFont_(NSFont.systemFontOfSize_(18))
         self.result.setString_('')
         self.result.setVerticallyResizable_(True)
         self.result.setHorizontallyResizable_(False)
         self.result.textContainer().setWidthTracksTextView_(True)
         scroll.setDocumentView_(self.result)
-        root.addSubview_(scroll)
+        message_box.contentView().addSubview_(scroll)
         message_view = self.result
         self.result_editors = []
+        self.choice_titles = []
         cards = []
-        for index in range(3):
-            title = label(root, f'方案{"一二三"[index]}', (26 + index * 319, 218, 300, 23), 14)
-            card = NSScrollView.alloc().initWithFrame_(NSMakeRect(26 + index * 319, 90, 310, 123))
-            card.setHasVerticalScroller_(True)
-            editor = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 290, 123))
+        columns = (24, 347, 670)
+        for index, x in enumerate(columns):
+            title = label(root, f'方案{"一二三"[index]}', (x + 2, 204, 304, 20), 13,
+                          secondary, weight=NSFontWeightSemibold)
+            self.choice_titles.append(title)
+            box = card(root, (x, 72, 306, 128), radius=12)
+            choice = NSScrollView.alloc().initWithFrame_(NSMakeRect(6, 4, 294, 120))
+            choice.setHasVerticalScroller_(True)
+            choice.setBorderType_(NSNoBorder)
+            choice.setDrawsBackground_(False)
+            editor = NSTextView.alloc().initWithFrame_(NSMakeRect(0, 0, 280, 120))
             editor.setEditable_(True)
             editor.setSelectable_(True)
             editor.setRichText_(False)
             editor.setAllowsUndo_(True)
+            editor.setDrawsBackground_(False)
             editor.setFont_(NSFont.systemFontOfSize_(18))
+            editor.setTextContainerInset_((4, 6))
             editor.setVerticallyResizable_(True)
             editor.setHorizontallyResizable_(False)
             editor.textContainer().setWidthTracksTextView_(True)
             editor.setDelegate_(self)
-            card.setDocumentView_(editor)
-            root.addSubview_(card)
+            choice.setDocumentView_(editor)
+            box.contentView().addSubview_(choice)
             self.result_editors.append(editor)
-            cards.extend((title, card))
-        self.result = CandidatePanel(message_view, scroll, cards, self.result_editors)
+            cards.extend((title, box))
+        self.result = CandidatePanel(message_view, message_box, cards, self.result_editors)
         self.result.setString_('')
         self.choice_buttons = []
-        for index in range(3):
-            for offset, action, title in ((0, 'copyChoice:', '复制'), (139, 'insertChoice:', '输入')):
-                b = NSButton.buttonWithTitle_target_action_(f'{title}方案{"一二三"[index]}', self, action)
-                b.setFrame_(NSMakeRect(26 + index * 319 + offset, 49, 132, 32))
+        for index, x in enumerate(columns):
+            for offset, action, title, symbol in ((0, 'copyChoice:', '复制', 'doc.on.doc'),
+                                                  (157, 'insertChoice:', '输入', 'text.cursor')):
+                b = button(root, title, self, action, (x + offset, 28, 149, 34), symbol=symbol,
+                           tip=f'{title}方案{"一二三"[index]}')
                 b.setTag_(index)
                 b.setEnabled_(False)
-                root.addSubview_(b)
                 self.choice_buttons.append(b)
         self.window.center()
+
+    @objc.python_method
+    def _apply_state_style(self, state):
+        """Recording turns the preview border and status red; errors are orange."""
+        video_card = getattr(self, 'video_card', None)
+        if video_card is None:
+            return
+        recording = state in ('recording', 'finishing')
+        layer = video_card.layer()
+        layer.setBorderColor_(NSColor.systemRedColor().CGColor())
+        layer.setBorderWidth_(4.0 if recording else 0.0)
+        self.state_label.setTextColor_(
+            NSColor.systemRedColor() if recording else
+            NSColor.systemOrangeColor() if state in ('error', 'waiting_for_microphone') else
+            NSColor.systemGreenColor() if state == 'ready' else NSColor.labelColor())
 
     @objc.python_method
     def launch(self):
@@ -513,8 +595,26 @@ class LiveTest(NSObject):
         from evaluate_cnvsrc import _reader, _load_adapter
         reader = _reader(CHECKPOINT, SOURCE, 40, .1, 'mps')
         metadata = _load_adapter(reader, ADAPTER)
+        reader.lm_scorer = self._load_chinese_lm(reader)
         reader.encode(np.zeros((25, 96, 96), dtype=np.uint8))
         return reader, metadata['file_sha256']
+
+    @objc.python_method
+    def _load_chinese_lm(self, reader):
+        """Optional CMLR character LM for beam-search fusion; never required."""
+        self.chinese_lm_loaded = False
+        if os.environ.get('LIPCN_LM_FUSION') == '0':
+            return None  # Opt out: ~1.7 s faster final results, ~1.5 points higher CER.
+        try:
+            if not ((CHINESE_LM / 'model.pth').is_file() and (CHINESE_LM / 'model.json').is_file()):
+                return None
+            from research.lm_fusion import MappedLM, load_cmlr_lm
+            lm, vocabulary = load_cmlr_lm(CHINESE_LM, str(reader.device))
+            scorer = MappedLM(lm, vocabulary, reader.token_list)
+        except Exception:
+            return None  # A missing or mismatched LM keeps the unfused search.
+        self.chinese_lm_loaded = True
+        return scorer
 
     @objc.python_method
     def _release_visual(self):
@@ -911,6 +1011,7 @@ class LiveTest(NSObject):
                 self.finish_(None)
         elif self.processing:
             label = ('正在取消' if not active_processing else
+                     '草稿已显示 · 正在精确识别' if self.result_variants and getattr(self, 'showing_draft', False) else
                      '方案一已可使用 · 正在补充' if self.result_variants else
                      getattr(self, 'inference_stage', '识别中'))
             if self.camera is not None and self.camera.is_open:
@@ -933,6 +1034,7 @@ class LiveTest(NSObject):
             self.state_label.setStringValue_('请允许麦克风后开始。' if self._uses_speech()
                                             else '口型模型尚未就绪，请重试加载。')
             state = 'waiting_for_microphone'
+        self._apply_state_style(state)
         if time.monotonic() - self.last_status_write >= 1.0:
             self._status(state)
 
@@ -944,6 +1046,8 @@ class LiveTest(NSObject):
         self.error = None
         self.pending_begin = True
         self.first_result_seconds = None
+        self.showing_draft = False
+        self.draft_seconds = None
         self.result_variants = []
         self._refresh_choices()
         self._refresh_language_control()
@@ -1117,15 +1221,21 @@ class LiveTest(NSObject):
                 stage_started = time.monotonic()
                 encoded = self.reader.encode(rois)
                 stage_seconds['lip_encoder'] = time.monotonic() - stage_started
+                if language != 'en':
+                    self._show_draft(token, encoded, language, metadata, stage_seconds)
                 stage_started = time.monotonic()
                 if language == 'en':
                     hypotheses = self.reader.hypotheses(encoded, nbest=4)
                 else:
                     from evaluate_cnvsrc import configured_hypotheses
-                    hypotheses, _ = configured_hypotheses(
-                        self.reader, encoded, beam_size=40, ctc_weight=.1,
-                        nbest=10, reverse_weight=.3, reverse_scoring='batched',
-                        candidate_pool_size=10, pre_beam_ratio=1.5)
+                    search = dict(beam_size=40, ctc_weight=.1, nbest=10, reverse_weight=.3,
+                                  reverse_scoring='batched', candidate_pool_size=10,
+                                  pre_beam_ratio=1.5)
+                    lm = getattr(self.reader, 'lm_scorer', None)
+                    if lm is not None:
+                        from research.lm_fusion import LENGTH_BONUS, LM_WEIGHT
+                        search.update(lm=lm, lm_weight=LM_WEIGHT, length_bonus=LENGTH_BONUS)
+                    hypotheses, _ = configured_hypotheses(self.reader, encoded, **search)
                 stage_seconds['lip_decoder'] = time.monotonic() - stage_started
                 texts = [hypothesis.text for hypothesis in hypotheses]
                 del rois
@@ -1168,6 +1278,37 @@ class LiveTest(NSObject):
             AppHelper.callAfter(self._infer_error, token, message)
 
     @objc.python_method
+    def _show_draft(self, token, encoded, language, metadata, stage_seconds):
+        """Show the CTC best path while the full search runs.
+
+        On the 33-clip development set this draft costs ~3 ms with a CER about
+        3 points above the full search (60.5% vs 57.1%). The full result then
+        replaces it unless the user has already edited the draft.
+        """
+        started = time.monotonic()
+        try:
+            text = self.reader.greedy(encoded)
+            if not isinstance(text, str) or not text.strip() or token != self.token or self.closed:
+                return
+            draft = self.formatter.recognition_choices([text], language=language)
+        except Exception:
+            return  # The draft is optional; the full search still runs.
+        finally:
+            stage_seconds['lip_draft'] = time.monotonic() - started
+        if draft.variants:
+            AppHelper.callAfter(self._draft_inferred, token, draft,
+                                time.monotonic() - getattr(self, 'inference_started', started), metadata)
+
+    @objc.python_method
+    def _draft_inferred(self, token, formatted, seconds, metadata):
+        if self.closed or token != self.token or not self.processing or self.result_variants:
+            return
+        self.draft_seconds = seconds
+        self.showing_draft = True
+        self._present_variants(formatted.variants[:1])
+        self._status('draft_shown')
+
+    @objc.python_method
     def _discarded(self, token):
         if token == getattr(self, 'processing_token', token):
             self.processing = False
@@ -1183,6 +1324,11 @@ class LiveTest(NSObject):
     def _refresh_choices(self):
         for button in self.choice_buttons:
             button.setEnabled_(bool(self._choice_text(button.tag()).strip()))
+        titles = getattr(self, 'choice_titles', [])
+        if titles:
+            draft = getattr(self, 'showing_draft', False) and bool(self.result_variants)
+            titles[0].setStringValue_('方案一 · 草稿（快速识别，可直接修改）' if draft else '方案一')
+            titles[0].setTextColor_(NSColor.systemOrangeColor() if draft else NSColor.secondaryLabelColor())
 
     def textDidChange_(self, notification):
         self._refresh_choices()
@@ -1216,6 +1362,7 @@ class LiveTest(NSObject):
             return
         self.first_result_seconds = seconds
         self.last_route = metadata['route']
+        self.showing_draft = False
         self._present_variants(formatted.variants)
         self._status('first_result_shown')
 
@@ -1272,8 +1419,8 @@ class LiveTest(NSObject):
         self.pending_begin = False
         self.audio.cancel()
         self.result_variants = []
-        for b in self.choice_buttons:
-            b.setEnabled_(False)
+        self.showing_draft = False
+        self._refresh_choices()
         if self.camera is not None:
             self.camera.stop_recording()
             self.camera.preview_tracking_interval = 1.0 if self.suspended else 1 / 12
@@ -1477,6 +1624,8 @@ class LiveTest(NSObject):
                 'processing': self.processing, 'completed_utterances': self.completed,
                 'last_inference_seconds': self.last_latency, 'error': bool(self.error),
                 'first_result_seconds': getattr(self, 'first_result_seconds', None),
+                'draft_seconds': getattr(self, 'draft_seconds', None),
+                'chinese_lm_loaded': getattr(self, 'chinese_lm_loaded', False),
                 'last_stage_seconds': getattr(self, 'last_stage_seconds', {}),
                 'warmup_seconds': getattr(self, 'warmup_seconds', {}),
                 'startup_complete': getattr(self, 'startup_complete', not self.loading),

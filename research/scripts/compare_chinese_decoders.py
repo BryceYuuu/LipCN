@@ -103,7 +103,8 @@ def ctc_search_workspace_bytes(encoded, beam_size, vocabulary_size, ctc_weight, 
 
 
 def decode_candidates(reader, encoded, ctc_weight: float, beam_size: int, nbest: int, *,
-                      candidate_pool_size=None, pre_beam_ratio=1.5) -> list[Candidate]:
+                      candidate_pool_size=None, pre_beam_ratio=1.5, lm=None, lm_weight=0.0,
+                      length_bonus=0.0) -> list[Candidate]:
     """Build fresh research scorers; return up to pool unique candidates before reranking.
 
     The default pool equals nbest, preserving the original five-argument API.
@@ -123,11 +124,19 @@ def decode_candidates(reader, encoded, ctc_weight: float, beam_size: int, nbest:
     from espnet.nets.batch_beam_search import BatchBeamSearch
     from espnet.nets.scorers.length_bonus import LengthBonus
 
+    for name, value in (('lm_weight', lm_weight), ('length_bonus', length_bonus)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError(f'{name} must be a finite non-negative number')
     scorers = reader.model.scorers()
     scorers['length_bonus'] = LengthBonus(len(reader.token_list))
+    weights = {'decoder': 1 - ctc_weight, 'ctc': ctc_weight, 'length_bonus': float(length_bonus)}
+    if lm is not None and lm_weight > 0:
+        # Shallow fusion: a character LM scores every expansion (research/lm_fusion.py).
+        scorers['lm'] = lm
+        weights['lm'] = float(lm_weight)
     beam = BatchBeamSearch(
         beam_size=beam_size, vocab_size=len(reader.token_list),
-        weights={'decoder': 1 - ctc_weight, 'ctc': ctc_weight, 'length_bonus': 0.0},
+        weights=weights,
         scorers=scorers, sos=len(reader.token_list) - 1, eos=len(reader.token_list) - 1,
         token_list=reader.token_list, pre_beam_score_key=None if ctc_weight == 1 else 'decoder',
         pre_beam_ratio=pre_beam_ratio,
