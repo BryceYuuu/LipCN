@@ -14,6 +14,7 @@ import re
 import urllib.error
 import urllib.request
 
+from . import __version__
 from .assets import Asset, plan
 
 
@@ -31,10 +32,10 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def check(mode='speech', *, verify=False, environment=None) -> dict:
+def check(mode='speech', *, verify=False, environment=None, wording=False) -> dict:
     """Inspect platform, package metadata and assets; never import/load a model."""
     checks = []
-    for asset in plan(mode, environment=environment):
+    for asset in plan(mode, environment=environment, wording=wording):
         state = 'missing'
         if asset.path.is_file():
             size = asset.path.stat().st_size
@@ -59,7 +60,7 @@ def check(mode='speech', *, verify=False, environment=None) -> dict:
     supported = supported and platform.python_version_tuple()[:2] in [('3', '11'), ('3', '12')]
     if supported and system['macos']:
         supported = int(system['macos'].split('.')[0]) >= 14
-    return {'schema_version': 1, 'mode': mode, 'platform': system, 'platform_supported': supported,
+    return {'schema_version': 1, 'mode': mode, 'wording': wording, 'platform': system, 'platform_supported': supported,
             'ready': supported and all(c['status'] == 'ready' for c in checks + dependencies),
             'assets': checks, 'dependencies': dependencies,
             'missing_download_bytes': sum(c['size'] or 0 for c in checks if c['status'] != 'ready' and c['downloadable']),
@@ -81,7 +82,7 @@ def download(asset: Asset, *, progress=None, opener=urllib.request.urlopen) -> N
         partial.unlink()
         offset = 0
     if offset < asset.size:
-        headers = {'User-Agent': 'LipCN/2.3.0', 'Accept-Encoding': 'identity'}
+        headers = {'User-Agent': 'LipCN/' + __version__, 'Accept-Encoding': 'identity'}
         if offset:
             headers['Range'] = f'bytes={offset}-'
         request = urllib.request.Request(asset.url, headers=headers)
@@ -118,11 +119,11 @@ def download(asset: Asset, *, progress=None, opener=urllib.request.urlopen) -> N
 
 
 def prepare(mode='speech', *, download=False, accept_research_license=False,
-            progress=None, environment=None) -> dict:
+            progress=None, environment=None, wording=False) -> dict:
     """No mutation unless download=True. Local/private adapters are never downloaded."""
-    assets = plan(mode, environment=environment)
+    assets = plan(mode, environment=environment, wording=wording)
     if not download:
-        return check(mode, environment=environment)
+        return check(mode, environment=environment, wording=wording)
     if any(asset.research_license for asset in assets) and not accept_research_license:
         raise ValueError('Visual research assets require explicit acceptance of their source terms; '
                          'use accept_research_license=True (CLI: --accept-research-license) or choose speech mode.')
@@ -130,4 +131,4 @@ def prepare(mode='speech', *, download=False, accept_research_license=False,
     for asset in assets:
         if asset.url is not None:
             downloader(asset, progress=progress)
-    return check(mode, verify=True, environment=environment)
+    return check(mode, verify=True, environment=environment, wording=wording)

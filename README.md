@@ -52,12 +52,13 @@ cd LipCN
 Use `lipcn` to launch the current desktop. `doctor` checks the environment and assets; `setup` downloads only with `--download`, using pinned revisions and SHA-256 verification. See **[desktop setup](desktop/mandarin/README.md)**.
 
 ```bash
-python3.12 -m venv .venv
-.venv/bin/python -m pip install -e '.[desktop]'
-.venv/bin/lipcn doctor --mode speech
-.venv/bin/lipcn setup --mode speech --download
+./install.sh          # 依赖 + 语音模型 / dependencies + speech models
 .venv/bin/lipcn
 ```
+
+`install.sh` 用 [uv](https://docs.astral.sh/uv/) 按 `uv.lock` 安装依赖，再执行 `lipcn setup --download`；附加参数会原样传给 `setup`，例如 `./install.sh --mode english --accept-research-license`。约 1 GB 的 MLX 表达模型只用于 `LIPCN_WORDING_MODE=model`，默认不下载、不检查，需要时加 `--with-wording`。根目录的 `setup.sh` 是保留的原版 Lipflow 安装脚本，不用于 LipCN。
+
+`install.sh` installs locked dependencies with [uv](https://docs.astral.sh/uv/), then runs `lipcn setup --download`; extra arguments are passed to `setup`, e.g. `./install.sh --mode english --accept-research-license`. The ~1 GB MLX wording model only serves `LIPCN_WORDING_MODE=model`, so it is skipped unless you add `--with-wording`. The root `setup.sh` is the retained legacy Lipflow installer, not LipCN's.
 
 上面的命令准备语音模型；只安装这些资源时，请启动后切换“语音优先”。默认中文纯口型所需的视觉模型与兼容 adapter 见桌面安装说明。
 

@@ -8,10 +8,13 @@ from pathlib import Path
 
 
 MODES = ('speech', 'mandarin', 'english', 'all')
-GROUPS = {'speech': {'asr', 'wording', 'face'},
-          'mandarin': {'asr', 'wording', 'chinese', 'face'},
-          'english': {'english', 'wording', 'face'},
-          'all': {'asr', 'wording', 'chinese', 'face', 'english'}}
+GROUPS = {'speech': {'asr', 'face'},
+          'mandarin': {'asr', 'chinese', 'face'},
+          'english': {'english', 'face'},
+          'all': {'asr', 'chinese', 'face', 'english'}}
+# The MLX wording model only serves LIPCN_WORDING_MODE=model for accepted speech;
+# the default desktop never loads it, so it is opt-in for every mode.
+WORDING_GROUP = 'wording'
 
 
 @dataclass(frozen=True)
@@ -43,14 +46,15 @@ def paths(environment=None) -> dict[str, Path]:
             'FACE_MODEL': path('FACE_MODEL', cache / 'models/face_landmarker.task')}
 
 
-def plan(mode='speech', *, environment=None) -> list[Asset]:
+def plan(mode='speech', *, environment=None, wording=False) -> list[Asset]:
     if mode not in GROUPS:
         raise ValueError('Unknown setup mode: ' + mode)
+    groups = GROUPS[mode] | {WORDING_GROUP} if wording else GROUPS[mode]
     locations = paths(environment)
     data = json.loads(Path(__file__).with_name('assets_manifest.json').read_text())
     result = []
     for row in data['assets']:
-        if row['group'] in GROUPS[mode]:
+        if row['group'] in groups:
             path = locations[row['base']]
             if row['relative']:
                 path = path / row['relative']

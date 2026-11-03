@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
+# LEGACY Lipflow installer (English app, /Applications/Lipflow.app). For LipCN use ./install.sh.
 # Install dependencies and download the models (~1.2 GB). Add --samples for the test clips.
 set -euo pipefail
 cd "$(dirname "$0")"
+
+echo "Note: this installs the legacy Lipflow app. For the LipCN desktop, run ./install.sh instead." >&2
 
 if ! command -v uv >/dev/null; then
   echo "Installing uv (Python package manager)…"

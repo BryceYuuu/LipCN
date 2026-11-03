@@ -13,6 +13,9 @@ from . import __version__
 from .assets import MODES, paths
 
 
+WORDING_HELP = 'include the optional ~1 GB MLX wording model (implied by LIPCN_WORDING_MODE=model)'
+
+
 def desktop_path() -> Path:
     return Path(__file__).resolve().parents[1] / 'desktop/mandarin/live_test.py'
 
@@ -45,6 +48,8 @@ def show_report(report, *, as_json=False):
     for item in report['assets']:
         note = ' (provide your compatible local adapter)' if not item['downloadable'] else ''
         print(f"{item['status']:12} {item['key']}: {item['path']}{note}")
+    if not report.get('wording', True):
+        print('Optional wording model not checked (only used with LIPCN_WORDING_MODE=model; add --with-wording).')
     print(report['note'])
 
 
@@ -69,19 +74,22 @@ def main(argv=None) -> int:
     doctor = commands.add_parser('doctor', help='inspect dependencies/assets without models, devices or network')
     doctor.add_argument('--mode', choices=MODES, default='speech')
     doctor.add_argument('--verify', action='store_true', help='also hash local model files (can take time)')
+    doctor.add_argument('--with-wording', action='store_true', help=WORDING_HELP)
     doctor.add_argument('--json', action='store_true')
     setup = commands.add_parser('setup', help='plan model preparation; downloads require --download')
     setup.add_argument('--mode', choices=MODES)
     setup.add_argument('--download', action='store_true')
     setup.add_argument('--accept-research-license', action='store_true')
+    setup.add_argument('--with-wording', action='store_true', help=WORDING_HELP)
     setup.add_argument('--json', action='store_true')
     args = parser.parse_args(argv)
     try:
         if args.command in (None, 'run'):
             return launch()
         from .setup import check, prepare
+        wording = args.with_wording or os.environ.get('LIPCN_WORDING_MODE') == 'model'
         if args.command == 'doctor':
-            report = check(args.mode, verify=args.verify)
+            report = check(args.mode, verify=args.verify, wording=wording)
         else:
             mode = args.mode
             if mode is None:
@@ -93,7 +101,7 @@ def main(argv=None) -> int:
                     parser.error('unknown setup mode')
             if args.download:
                 print('Downloading only explicitly selected public assets; private adapters are never downloaded.', file=sys.stderr)
-            report = prepare(mode, download=args.download,
+            report = prepare(mode, download=args.download, wording=wording,
                              accept_research_license=args.accept_research_license)
         show_report(report, as_json=args.json)
         return 0 if report['ready'] else 1

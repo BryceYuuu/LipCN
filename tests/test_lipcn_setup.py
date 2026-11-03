@@ -13,7 +13,7 @@ from lipcn import assets, cli, setup
 
 
 def test_manifest_pins_every_public_asset_and_never_publishes_local_adapter(tmp_path):
-    items = assets.plan('all', environment={'HOME': str(tmp_path)})
+    items = assets.plan('all', environment={'HOME': str(tmp_path)}, wording=True)
     assert len(items) >= 20
     assert len({item.path for item in items}) == len(items)
     for item in items:
@@ -29,10 +29,56 @@ def test_manifest_pins_every_public_asset_and_never_publishes_local_adapter(tmp_
 
 def test_asset_modes_respect_user_overrides_and_include_desktop_preview_asset(tmp_path):
     items = assets.plan('speech', environment={'HOME': str(tmp_path), 'LIPCN_ASR_MODEL': str(tmp_path/'asr')})
-    assert {item.group for item in items} == {'asr', 'wording', 'face'}
+    assert {item.group for item in items} == {'asr', 'face'}
     assert not any(item.research_license for item in items)
     assert all(item.path.parent == tmp_path/'asr' for item in items if item.group == 'asr')
-    assert {item.group for item in assets.plan('english')} == {'english', 'wording', 'face'}
+    assert {item.group for item in assets.plan('english')} == {'english', 'face'}
+
+
+@pytest.mark.parametrize('mode', assets.MODES)
+def test_wording_model_is_opt_in_for_every_mode(tmp_path, mode):
+    env = {'HOME': str(tmp_path)}
+    assert 'wording' not in {item.group for item in assets.plan(mode, environment=env)}
+    with_wording = assets.plan(mode, environment=env, wording=True)
+    assert 'wording' in {item.group for item in with_wording}
+    assert len(with_wording) == len(assets.plan(mode, environment=env)) + sum(
+        item.group == 'wording' for item in with_wording)
+
+
+def test_english_ready_without_optional_wording_model(tmp_path, monkeypatch):
+    env = {'HOME': str(tmp_path)}
+    for item in assets.plan('english', environment=env):
+        item.path.parent.mkdir(parents=True, exist_ok=True)
+        item.path.write_bytes(b'x' * (item.size or 1))
+    monkeypatch.setattr(setup.importlib.metadata, 'version', lambda name: '1')
+    monkeypatch.setattr(setup.platform, 'system', lambda: 'Darwin')
+    monkeypatch.setattr(setup.platform, 'machine', lambda: 'arm64')
+    monkeypatch.setattr(setup.platform, 'python_version_tuple', lambda: ('3', '12', '0'))
+    monkeypatch.setattr(setup.platform, 'mac_ver', lambda: ('14.0', ('', '', ''), ''))
+    report = setup.check('english', environment=env)
+    assert report['ready'] and report['wording'] is False
+    assert not setup.check('english', environment=env, wording=True)['ready']
+
+
+@pytest.mark.parametrize('argv,env_mode,expected', [
+    (['doctor'], None, False),
+    (['doctor', '--with-wording'], None, True),
+    (['doctor'], 'model', True),
+    (['setup', '--mode', 'speech'], None, False),
+    (['setup', '--mode', 'speech', '--with-wording'], None, True),
+    (['setup', '--mode', 'speech'], 'model', True),
+])
+def test_cli_wording_flag_and_model_mode_include_wording(monkeypatch, argv, env_mode, expected):
+    seen = []
+    report = {'ready': True, 'assets': [], 'dependencies': []}
+    monkeypatch.setattr(setup, 'check', lambda *a, **k: seen.append(k['wording']) or report)
+    monkeypatch.setattr(setup, 'prepare', lambda *a, **k: seen.append(k['wording']) or report)
+    if env_mode is None:
+        monkeypatch.delenv('LIPCN_WORDING_MODE', raising=False)
+    else:
+        monkeypatch.setenv('LIPCN_WORDING_MODE', env_mode)
+    assert cli.main(argv + ['--json']) == 0
+    assert seen == [expected]
 
 
 def test_doctor_is_stdlib_only_and_does_not_create_profile_or_cache(tmp_path):

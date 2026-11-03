@@ -39,9 +39,9 @@ Startup does not download models. Read each source’s terms, then put the asset
 | 英文口型 / English visual model | `~/.cache/lipcn/models/english/vsr/` | [LRS3_V_WER19.1](https://huggingface.co/Amanvir/LRS3_V_WER19.1), revision `c0b413f56b164565865a63f00774ee55a9738cc5`; `model.json` 与 / and `model.pth` |
 | 英文解码语言模型 / English decoding language model | `~/.cache/lipcn/models/english/lm/` | [lm_en_subword](https://huggingface.co/Amanvir/lm_en_subword), revision `f4e39b6d0904b2a900c53a2fff0377796c797bdc`; `model.json` 与 / and `model.pth` |
 
-只准备语音模型时，启动后需手动切换“语音优先”使用语音输入；缺少口型基座、词表或兼容适配参数时，默认纯口型及口型回退不可用。口型结果从模型候选中保序去重，展示最多三条，不改写、不补重复项。语音结果默认快速文字整理，原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启，仅用于语音。`setup` 仍会准备含可选表达模型的完整资源组。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
+只准备语音模型时，启动后需手动切换“语音优先”使用语音输入；缺少口型基座、词表或兼容适配参数时，默认纯口型及口型回退不可用。口型结果从模型候选中保序去重，展示最多三条，不改写、不补重复项。语音结果默认快速文字整理，原有 MLX 润色可通过 `LIPCN_WORDING_MODE=model` 开启，仅用于语音。`setup` 与 `doctor` 默认不包含可选表达模型；需要时加 `--with-wording`，设置 `LIPCN_WORDING_MODE=model` 时会自动包含。要复现完整口型配置，另见[研究工具与模型说明](../../research/README.md)。
 
-With only the ASR model prepared, switch to Speech first after launch to use speech input. The default Lip only mode and visual fallback are unavailable without the visual checkpoint, vocabulary and compatible adapter. Lip results show up to three distinct model hypotheses in rank order, without rewrites or duplicate padding. Accepted speech uses fast formatting by default; `LIPCN_WORDING_MODE=model` enables optional MLX cleanup for speech only. Setup still prepares the full resource group including the optional wording model. See the [research tools and model notes](../../research/README.md) for the visual setup.
+With only the ASR model prepared, switch to Speech first after launch to use speech input. The default Lip only mode and visual fallback are unavailable without the visual checkpoint, vocabulary and compatible adapter. Lip results show up to three distinct model hypotheses in rank order, without rewrites or duplicate padding. Accepted speech uses fast formatting by default; `LIPCN_WORDING_MODE=model` enables optional MLX cleanup for speech only. `setup` and `doctor` skip the optional wording model unless you pass `--with-wording`; it is included automatically when `LIPCN_WORDING_MODE=model` is set. See the [research tools and model notes](../../research/README.md) for the visual setup.
 
 推荐统一检查和准备模型： / Use the unified checks and model setup:
 
@@ -50,6 +50,7 @@ With only the ASR model prepared, switch to Speech first after launch to use spe
 .venv/bin/lipcn setup --mode speech --download
 .venv/bin/lipcn setup --mode english --download --accept-research-license
 .venv/bin/lipcn doctor --mode all --json
+.venv/bin/lipcn setup --mode speech --download --with-wording   # 可选表达模型 / optional wording model
 ```
 
 `doctor` 不打开设备、不加载神经模型、不联网。下载按固定版本与 SHA-256 检查，临时文件验证通过后才替换目标；已验证文件可复用。中英文视觉研究模型的下载另需阅读来源许可并明确选择 `--accept-research-license`；本地 adapter 仍需自行提供。
