@@ -20,7 +20,7 @@ BASE_ADAPTER="${BASE_ADAPTER:-$MODELS/round8-encoder-adapter.pth}"
 INSTALL="${INSTALL:-$MODELS/personal-encoder-adapter.pth}"
 RUN="${RUN:-$PROFILE/personal-adapter/run-$(date +%Y%m%d-%H%M%S)}"
 EPOCHS="${EPOCHS:-6}"
-MAX_SECONDS="${MAX_SECONDS:-5400}"  # ~12 min per epoch for 180 train + 40 dev clips on an M4
+MAX_SECONDS="${MAX_SECONDS:-1800}"  # trainer cap (cumulative across resumes); best finished epoch is kept
 
 for file in "$TRAIN" "$DEV" "$BASE_ADAPTER" "$MODELS/model_avg_cncvs_2_3_cnvsrc.pth"; do
   [[ -f "$file" ]] || { echo "Missing: $file" >&2; exit 2; }

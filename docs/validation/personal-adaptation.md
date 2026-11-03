@@ -10,7 +10,7 @@ People's lips differ a lot: on the public development set the same model ranges 
 | --- | --- | --- |
 | 1. 测试句 | [摄像头基准](webcam-baseline.md)的 40 句（`--split dev`） | 约 15 分钟 |
 | 2. 训练句 | [`personal-train-prompts.json`](../../research/examples/personal-train-prompts.json) 179 句（`--split train`） | 约 45–60 分钟，可分几次 |
-| 3. 训练 | 一条命令，自动比较并安装 | 约 75 分钟（M4，6 轮） |
+| 3. 训练 | 一条命令，自动比较并安装 | 最多 30 分钟（训练程序的累计上限） |
 
 两组必须使用**同一个 `--speaker`、不同的 `--session`**，最好不在同一天录；否则训练脚本会拒绝开始，避免同一次录制的光线和状态同时出现在训练和测试里。
 
@@ -47,7 +47,7 @@ research/scripts/train_personal_adapter.sh
 
 脚本会：
 
-1. 检查两组数据：同一个人、不同场次、没有重复句子或视频；
+1. 检查两组数据：同一个人、不同场次、没有重复句子或视频；训练最多 30 分钟（累计），数据多时跑不完 6 轮也会保留已完成轮次中最好的一轮；
 2. 先用 Round8 在你的测试句上测出起点；
 3. 每训练一轮就在测试句上评估，保留最好的一轮；
 4. 只有比 Round8 更好时，才安装到 `~/.cache/lipcn/models/mandarin/personal-encoder-adapter.pth`。
