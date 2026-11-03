@@ -76,10 +76,13 @@ def check_isolation(root, details, reference=None):
                 raise ValueError('This reference is already in another split; use independently authored prompts')
 
 
-def commit_clip(recording, root, details, card, *, silent_confirmed=False, label_confirmed=False):
+def commit_clip(recording, root, details, card, *, silent_confirmed=False, label_confirmed=False,
+                articulation='silent'):
     """Atomically publish original full-frame video plus explicit human metadata."""
     if silent_confirmed is not True or label_confirmed is not True:
         raise ValueError('Separate human confirmation of silence and exact reference/entities is required')
+    if articulation not in ('silent', 'voiced'):
+        raise ValueError('articulation must be silent or voiced')
     details = metadata(**details)
     card = prompt(**card)
     root = Path(root).resolve()
@@ -115,7 +118,7 @@ def commit_clip(recording, root, details, card, *, silent_confirmed=False, label
         row = {'id': identity, 'video': final.relative_to(directory).as_posix(), **details, **card,
                'label_verified': True, 'entities_verified': True,
                'label_source': 'Operator prepared reference before recording and separately confirmed exact articulation/entities',
-               'domain': 'webcam', 'mouth_roi': False, 'articulation': 'silent',
+               'domain': 'webcam', 'mouth_roi': False, 'articulation': articulation,
                'articulation_verified': True, 'audio_recorded': False,
                'confirmed_at': datetime.now().astimezone().isoformat(),
                'sha256': digest.hexdigest(), 'collection': evidence}
@@ -175,6 +178,69 @@ def _resolve_camera(camera):
     return next((index for index, device in enumerate(devices) if 'iphone' not in str(device.localizedName()).casefold()), 0)
 
 
+FONT_PATHS = ('/System/Library/Fonts/Hiragino Sans GB.ttc', '/System/Library/Fonts/STHeiti Medium.ttc',
+              '/System/Library/Fonts/STHeiti Light.ttc', 'C:/Windows/Fonts/msyh.ttc',
+              '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc')
+SCREEN_WIDTH = 880
+
+
+def _font(size):
+    try:
+        from PIL import ImageFont
+    except ImportError:
+        return None
+    for path in FONT_PATHS:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return None
+
+
+def _wrap(text, font, width):
+    lines, line = [], ''
+    for character in text:
+        if line and font.getlength(line + character) > width:
+            lines.append(line)
+            line = ''
+        line += character
+    return lines + ([line] if line else [])
+
+
+def screen(frame, *, progress, sentence, hint, detail='', recording=False):
+    """One window: progress and the sentence above a mirrored preview, keys below.
+
+    Only this display copy is drawn on; recorded frames are never modified.
+    """
+    import cv2
+    import numpy as np
+
+    height = max(1, round(SCREEN_WIDTH * frame.shape[0] / max(1, frame.shape[1])))
+    preview = cv2.flip(cv2.resize(frame, (SCREEN_WIDTH, height)), 1)
+    if recording:
+        cv2.rectangle(preview, (0, 0), (SCREEN_WIDTH - 1, height - 1), (40, 40, 230), 8)
+    small, large = _font(22), _font(46)
+    lines = _wrap(sentence, large, SCREEN_WIDTH - 56)[:2] if large is not None else []
+    header, footer = 72 + 62 * max(1, len(lines)), 96
+    canvas = np.full((header + height + footer, SCREEN_WIDTH, 3), 32, np.uint8)
+    canvas[header:header + height] = preview
+    if small is None or large is None:  # No CJK font: keep keys usable, sentence stays in the terminal.
+        cv2.putText(canvas, 'SPACE start/stop  ENTER save  R retake  P replay  ESC quit',
+                    (16, header + height + 40), cv2.FONT_HERSHEY_SIMPLEX, .7, (230, 230, 230), 2)
+        return canvas
+    from PIL import Image, ImageDraw
+    image = Image.fromarray(canvas[..., ::-1].copy())
+    draw = ImageDraw.Draw(image)
+    draw.text((28, 18), progress, font=small, fill=(170, 170, 170))
+    for row, line in enumerate(lines):
+        draw.text((28, 58 + row * 62), line, font=large, fill=(255, 255, 255))
+    draw.text((28, header + height + 16), hint, font=small,
+              fill=(235, 80, 80) if recording else (255, 255, 255))
+    if detail:
+        draw.text((28, header + height + 54), detail, font=small, fill=(250, 200, 90))
+    return np.asarray(image)[..., ::-1].copy()
+
+
 def pending_cards(root, split, cards):
     """Drop prompts whose text is already saved in this split, so sessions can resume."""
     manifest = Path(root) / split / 'manifest.json'
@@ -187,7 +253,8 @@ def pending_cards(root, split, cards):
     return pending, len(cards) - len(pending)
 
 
-def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megabytes=512.):
+def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megabytes=512.,
+            articulation='silent'):
     """SPACE starts each clip; S then ENTER confirms; P replays; R/ESC discard."""
     details = metadata(**details)
     if not math.isfinite(max_seconds) or not .6 <= max_seconds <= 60 or not math.isfinite(max_megabytes) or max_megabytes <= 0:
@@ -204,9 +271,16 @@ def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megab
         cards, skipped = pending_cards(root, details['split'], cards)
         if skipped:
             print(f'已跳过本分组中已保存的 {skipped} 句，还剩 {len(cards)} 句。', flush=True)
+    else:
+        skipped = 0
+    total = skipped + len(cards) if cards is not None else None
+    role = {'train': '训练句', 'dev': '测试句', 'test': '验收句'}[details['split']]
+    manner = '默念（不出声）' if articulation == 'silent' else '正常说话'
+    confirm = ('按 Enter 即确认：念的就是上面这句，并且没有出声' if articulation == 'silent'
+               else '按 Enter 即确认：说的就是上面这句')
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     print(f'仅摄像头，不打开麦克风。完整画面保存在：{directory / "videos"}', flush=True)
-    print('请让完整脸部入镜。原句与画面必须一致，不能发声或耳语。SPACE 每句开始/停止；S 确认无声；Enter 确认原句和标注；P 回放；R 重录；Esc 丢弃退出。', flush=True)
+    print(f'请让完整脸部入镜，{manner}。窗口里：空格 开始/结束，Enter 保存，R 重录，P 回放，Esc 退出。', flush=True)
     from research.collection import Recording, _camera_permission, directory_bytes
     import cv2
     if directory_bytes(directory) >= max_megabytes * 1024 * 1024:
@@ -223,14 +297,16 @@ def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megab
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 30)
         iterator = iter(cards) if cards is not None else None
+        number = skipped
         while True:
             card = next(iterator, None) if iterator is not None else _interactive_card()
             if card is None:
                 break
+            number += 1
             check_isolation(root, details, card['reference'])
-            print('准备原句：' + card['reference'], flush=True)
-            print('人名/数字：' + json.dumps(card['entities'], ensure_ascii=False), flush=True)
-            review, silent, frame = False, False, None
+            print(f'第 {number} 句：' + card['reference'], flush=True)
+            progress = f'{role} 第 {number} / {total} 句　·　{manner}' if total else f'{role} 第 {number} 句　·　{manner}'
+            review, notice, frame = False, '', None
             while True:
                 if not review:
                     ok, frame = cap.read()
@@ -243,21 +319,21 @@ def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megab
                             review = True
                         else:
                             recording.push(frame, now)
-                preview = frame.copy()
-                state = ('S confirm SILENT; ENTER confirm TEXT+ENTITIES; P replay; R retake' if review else 'SPACE start / stop; R discard; ESC quit')
-                if silent:
-                    state = 'SILENT confirmed; ENTER saves TEXT+ENTITIES; P replay; R retake'
-                cv2.putText(preview, state, (12, 28), cv2.FONT_HERSHEY_SIMPLEX, .5, (0, 255, 255), 1)
-                if recording:
-                    cv2.putText(preview, f'{recording.duration:.1f}s / {max_seconds}s', (12, 54), cv2.FONT_HERSHEY_SIMPLEX, .6, (0, 255, 255), 2)
-                cv2.imshow(WINDOW, preview)
+                if review:
+                    hint, detail = 'Enter 保存　·　R 重录　·　P 回放　·　Esc 退出', notice or confirm
+                elif recording is not None:
+                    hint, detail = f'● 录制中 {recording.duration:.1f} 秒　·　念完按 空格 结束', ''
+                else:
+                    hint, detail = '按 空格 开始，念完再按 空格 结束　·　Esc 退出', notice
+                cv2.imshow(WINDOW, screen(frame, progress=progress, sentence=card['reference'], hint=hint,
+                                          detail=detail, recording=recording is not None and not review))
                 key = cv2.waitKey(20) & 0xff
                 if key == 27 or cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
                     return directory / 'manifest.json'
                 if key in (ord('r'), ord('R')):
                     if recording:
                         recording.discard()
-                    recording, review, silent = None, False, False
+                    recording, review, notice = None, False, ''
                 elif key == 32 and not review:
                     if recording is None:
                         recording = Recording(directory, int(max_megabytes * 1024 * 1024), tracking_available=False)
@@ -276,19 +352,16 @@ def collect(root, details, cards=None, camera='auto', max_seconds=15., max_megab
                                 return directory / 'manifest.json'
                     finally:
                         replay.release()
-                elif review and key in (ord('s'), ord('S')):
-                    silent = True
-                    print('已声明没有发声或耳语；请再确认原句逐字一致，且人名/数字标注完整，Enter 保存。', flush=True)
                 elif review and key in (10, 13):
-                    if not silent:
-                        print('先按 S 明确确认没有发声或耳语。', flush=True)
-                        continue
                     if recording.duration < .6 or len(recording.ts) < 12:
-                        print('片段过短，请 R 重录（至少 0.6 秒、12 帧）。', flush=True)
+                        notice = '太短了（至少 0.6 秒），请按 R 重录'
                         continue
-                    row = commit_clip(recording, root, details, card, silent_confirmed=True, label_confirmed=True)
+                    # One explicit Enter confirms both the articulation and the exact
+                    # prepared sentence, as stated on screen before it is pressed.
+                    row = commit_clip(recording, root, details, card, silent_confirmed=True,
+                                      label_confirmed=True, articulation=articulation)
                     recording = None
-                    print(f'已保存：{directory / row["video"]}', flush=True)
+                    print(f'已保存第 {number} 句', flush=True)
                     break
     finally:
         if recording is not None:

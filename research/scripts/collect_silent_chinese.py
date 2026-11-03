@@ -33,6 +33,8 @@ def main(argv=None):
     parser.add_argument('--camera', default='auto', help='physical camera number or name')
     parser.add_argument('--max-seconds', type=float, default=15.)
     parser.add_argument('--max-megabytes', type=float, default=512., help='maximum storage per split')
+    parser.add_argument('--voiced', action='store_true',
+                        help='you speak aloud as you do when using LipCN (no audio is recorded); default is silent mouthing')
     args = parser.parse_args(argv)
     os.environ.setdefault('OPENCV_AVFOUNDATION_SKIP_AUTH', '1')
     from research.silent_collection import collect, metadata, load_prompts
@@ -40,7 +42,8 @@ def main(argv=None):
         details = metadata(args.speaker, args.session, args.split, args.date, args.lighting)
         cards = load_prompts(args.prompts) if args.prompts else None
         result = collect(args.output, details, cards=cards, camera=args.camera,
-                         max_seconds=args.max_seconds, max_megabytes=args.max_megabytes)
+                         max_seconds=args.max_seconds, max_megabytes=args.max_megabytes,
+                         articulation='voiced' if args.voiced else 'silent')
     except (OSError, ValueError, RuntimeError) as exc:
         parser.error(str(exc))
     except (KeyboardInterrupt, EOFError):

@@ -151,13 +151,16 @@ def test_duplicate_or_incompatible_manifest_cannot_publish(tmp_path):
         sc.check_isolation(tmp_path, details())
 
 
-@pytest.mark.parametrize('keys,save', [
-    ([27], False),
-    ([32, 255, 27], False),
-    ([32] + [255] * 12 + [32, 13, ord('s'), 13], True),
-    ([32] + [255] * 12 + [32, ord('s'), ord('r'), 27], False),
+@pytest.mark.parametrize('keys,save,articulation', [
+    ([27], False, 'silent'),
+    ([32, 255, 27], False, 'silent'),
+    ([13, 32] + [255] * 12 + [13], False, 'silent'),  # Enter before stopping never saves
+    ([32] + [255] * 12 + [32, 13], True, 'silent'),
+    ([32] + [255] * 12 + [32, 13], True, 'voiced'),
+    ([32] + [255] * 12 + [32, ord('r'), 27], False, 'silent'),
 ])
-def test_camera_loop_requires_explicit_start_and_two_confirmations_and_cleans_up(tmp_path, monkeypatch, keys, save):
+def test_camera_loop_requires_explicit_start_stop_and_enter_and_cleans_up(tmp_path, monkeypatch, keys, save,
+                                                                          articulation):
     import numpy as np
     from research import collection
     cv2 = collection.cv2
@@ -186,8 +189,13 @@ def test_camera_loop_requires_explicit_start_and_two_confirmations_and_cleans_up
     monkeypatch.setattr(cv2, 'destroyAllWindows', lambda: None)
     monkeypatch.setattr(cv2, 'putText', lambda frame, *args: frame.fill(99))
     monkeypatch.setattr(sc.time, 'monotonic', lambda: next(clock))
-    result = sc.collect(tmp_path, details(), cards=[sc.prompt('请发文件', [])])
+    keys_left = iter(keys)
+    monkeypatch.setattr(cv2, 'waitKey', lambda *args: builtins.next(keys_left, 27))
+    result = sc.collect(tmp_path, details(), cards=[sc.prompt('请发文件', [])], articulation=articulation)
     assert result.exists() is save
+    if save:
+        row = json.loads(result.read_text(encoding='utf-8'))['samples'][0]
+        assert row['articulation'] == articulation and row['reference'] == '请发文件'
     assert camera.released
     assert not list((tmp_path / 'train').glob('.unconfirmed-*'))
     # Preview overlays must never enter the video.
@@ -204,3 +212,13 @@ def test_prompt_files_resume_by_skipping_saved_references(tmp_path):
     pending, skipped = pending_cards(tmp_path, 'train', cards)
     assert [card['reference'] for card in pending] == ['明天见'] and skipped == 2
     assert pending_cards(tmp_path, 'dev', cards) == (cards, 0)
+
+
+def test_screen_draws_sentence_and_progress_without_touching_the_frame():
+    import numpy as np
+    frame = np.full((72, 128, 3), 7, np.uint8)
+    canvas = sc.screen(frame, progress='测试句 第 1 / 40 句', sentence='我现在在开会等一下再回你',
+                       hint='按 空格 开始', recording=True)
+    assert np.all(frame == 7)
+    assert canvas.shape[1] == sc.SCREEN_WIDTH and canvas.shape[0] > frame.shape[0]
+    assert canvas[:120].max() > 200  # header text was rendered

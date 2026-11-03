@@ -15,7 +15,8 @@ The 40 prompts cover everyday dictation; the last 10 use common Taiwan terms. Re
   --lighting indoor-front --prompts research/examples/webcam-baseline-prompts.json
 ```
 
-- 正对摄像头、光线照向脸部，按 `SPACE` 开始/结束，确认**没有发声或耳语**后按 `S`，再按 `Enter` 保存。
+- 窗口上方用大字显示要念的句子和进度。正对摄像头、光线照向脸部：按 `空格` 开始，念完再按 `空格` 结束，按 `Enter` 保存；不满意按 `R` 重录，`P` 回放，`Esc` 退出（下次运行会自动跳过已保存的句子）。
+- 录制方式要和平时使用 LipCN 一致：平时默念就默念；平时会出声，就在命令后加 `--voiced`（仍然只录画面，不录声音）。
 - 建议分两天、换一次光线录制；同一个 `--speaker` 在同一个数据目录里只能出现在一个分组。之后做[个人适配](personal-adaptation.md)时，训练句录在另一个目录、使用不同的 `--session`。
 - 视频保存在 `~/Library/Application Support/LipCN/silent-data/dev/`，只在本机，不要提交到 Git。
 
