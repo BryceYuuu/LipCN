@@ -54,12 +54,13 @@ def load_cmlr_lm(root: Path, device='cpu', *, verify=True):
     return lm, vocabulary
 
 
-def _scorer_base():
-    from espnet.nets.scorer_interface import BatchScorerInterface
-    return BatchScorerInterface
+try:  # Settings above stay importable without torch/ESPnet (headless desktop tests).
+    from espnet.nets.scorer_interface import BatchScorerInterface as _ScorerBase
+except ImportError:
+    _ScorerBase = object
 
 
-class MappedLM(_scorer_base()):
+class MappedLM(_ScorerBase):
     """ESPnet (batch) scorer exposing an LM in another character vocabulary."""
 
     def __init__(self, lm, lm_vocabulary: dict[str, int], tokens: list[str]):
